@@ -1,0 +1,50 @@
+@using System.Globalization
+@*
+    Grid of colored cells — darker = higher value. Used for "Peak Hours":
+    rows = days of the week, columns = hours. Hover a cell for its exact value.
+*@
+
+<div class="heatmap" style="grid-template-columns: 56px repeat(@ColumnLabels.Count, minmax(28px, 1fr));">
+    <div></div>
+    @foreach (var col in ColumnLabels)
+    {
+        <div class="heatmap-col">@col</div>
+    }
+
+    @for (var r = 0; r < RowLabels.Count; r++)
+    {
+        <div class="heatmap-row">@RowLabels[r]</div>
+        @for (var c = 0; c < ColumnLabels.Count; c++)
+        {
+            var value = Values[r, c];
+            <div class="heatmap-cell" style="background:@CellColor(value); color:@(Intensity(value) > 0.55 ? "#fff" : "#424242")"
+                 title="@RowLabels[r] @ColumnLabels[c]: @Formatter(value)">
+                @(value > 0 && ShowValues ? Formatter(value) : "")
+            </div>
+        }
+    }
+</div>
+<div class="heatmap-scale">
+    <span>Low</span><i></i><span>High</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<string> RowLabels { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<string> ColumnLabels { get; set; } = [];
+    [Parameter, EditorRequired] public double[,] Values { get; set; } = new double[0, 0];
+    [Parameter] public bool ShowValues { get; set; } = true;
+    [Parameter] public Func<double, string> Formatter { get; set; } = v => v.ToString("0", CultureInfo.InvariantCulture);
+
+    private double Max => Values.Cast<double>().DefaultIfEmpty(0).Max();
+
+    private double Intensity(double value) => Max <= 0 ? 0 : value / Max;
+
+    // Mixes white → brand purple (#5B5FC7) by intensity
+    private string CellColor(double value)
+    {
+        if (value <= 0) return "#F5F5F5";
+        var t = 0.12 + 0.88 * Intensity(value);
+        int Mix(int from, int to) => (int)Math.Round(from + (to - from) * t);
+        return $"rgb({Mix(240, 91)},{Mix(241, 95)},{Mix(252, 199)})";
+    }
+}

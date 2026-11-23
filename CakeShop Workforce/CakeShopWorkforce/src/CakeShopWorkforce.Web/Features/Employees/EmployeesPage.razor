@@ -1,0 +1,324 @@
+@page "/employees"
+@attribute [Authorize(Roles = Roles.Leaders)]
+@inject GetEmployees.Handler GetHandler
+@inject SaveEmployee.Handler SaveHandler
+@inject SetEmployeeActive.Handler ActiveHandler
+@inject StoreConfig Config
+@inject CurrentUser User
+@inject ToastService Toasts
+
+<PageHeader Title="People" Icon="people" Subtitle="The employee masterlist. Stations and available days are used by the schedule checks.">
+    @if (canEdit)
+    {
+        <button type="button" class="btn btn-primary" @onclick="AddNew"><Icon Name="plus" Size="16" /> Add employee</button>
+    }
+</PageHeader>
+
+<div class="toolbar">
+    <div class="search-box">
+        <Icon Name="search" Size="16" />
+        <input type="search" class="input" placeholder="Search name, ID or position" value="@filter.Search"
+               @oninput="OnSearch" aria-label="Search employees" />
+    </div>
+    <select class="input select" value="@(filter.StationId?.ToString() ?? "")" @onchange="OnStation" aria-label="Station">
+        <option value="">All stations</option>
+        @foreach (var s in stations)
+        {
+            <option value="@s.Id">@s.Name</option>
+        }
+    </select>
+    <label class="check">
+        <input type="checkbox" checked="@filter.IncludeInactive" @onchange="OnInactive" /> Show inactive
+    </label>
+    <span class="toolbar-spacer"></span>
+    @if (employees is not null)
+    {
+        <span class="muted">@employees.Count employee@(employees.Count == 1 ? "" : "s")</span>
+    }
+</div>
+
+@if (employees is null)
+{
+    <Loading Rows="6" />
+}
+else if (employees.Count == 0)
+{
+    <EmptyState Icon="people" Title="@(HasFilter ? "No one matches" : "No employees yet")"
+                Message="@(HasFilter ? "Try a different search or station." : "Add your bakers, decorators, cashiers and sales staff.")">
+        @if (canEdit && !HasFilter)
+        {
+            <button type="button" class="btn btn-primary" @onclick="AddNew"><Icon Name="plus" Size="16" /> Add employee</button>
+        }
+    </EmptyState>
+}
+else
+{
+    <Card Flush="true">
+        <div class="table-wrap">
+            <table class="table hover">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>ID</th>
+                        <th>Position</th>
+                        <th>Station</th>
+                        <th>Status</th>
+                        <th>Available</th>
+                        <th class="num">Max h/wk</th>
+                        <th>Rest day</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in employees)
+                    {
+                        <tr class="@(e.IsActive ? "" : "inactive")" @onclick="() => Edit(e)">
+                            <td>
+                                <div class="person-cell">
+                                    <Avatar Name="@e.FullName" />
+                                    <div>
+                                        <div class="strong">@e.FullName</div>
+                                        <div class="muted small">@e.EmploymentType@(e.ContactNumber is null ? "" : " · " + e.ContactNumber)</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="mono nowrap">@e.EmployeeCode</td>
+                            <td>@e.Position</td>
+                            <td class="nowrap">
+                                @if (e.StationName is not null)
+                                {
+                                    <span class="station-dot" style="background:@e.StationColor"></span>@e.StationName
+                                }
+                            </td>
+                            <td>
+                                @if (!e.IsActive) { <Badge Tone="neutral">Inactive</Badge> }
+                                else { <Badge Tone="@(e.EmploymentStatus == "Regular" ? "success" : "info")">@e.EmploymentStatus</Badge> }
+                                @if (e.IsDemo) { <Badge Tone="warning" Class="ml">Demo</Badge> }
+                            </td>
+                            <td><DayDots Days="@e.AvailableDays" /></td>
+                            <td class="num">@e.MaxHoursPerWeek</td>
+                            <td>@(e.RestDay ?? "—")</td>
+                            <td class="row-actions" @onclick:stopPropagation="true">
+                                @if (canEdit)
+                                {
+                                    <button type="button" class="icon-btn" title="Edit" @onclick="() => Edit(e)"><Icon Name="edit" Size="16" /></button>
+                                    @if (e.IsActive)
+                                    {
+                                        <button type="button" class="icon-btn" title="Deactivate" @onclick="() => confirmTarget = e"><Icon Name="trash" Size="16" /></button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="icon-btn" title="Reactivate" @onclick="() => SetActiveAsync(e, true)"><Icon Name="refresh" Size="16" /></button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </Card>
+}
+
+<SidePanel Open="form is not null" Title="@(form?.Id is null ? "Add employee" : "Edit employee")"
+           Subtitle="@(canEdit ? null : "Read only — ask a manager to change this")" OnClose="() => form = null">
+    <ChildContent>
+        @if (form is not null)
+        {
+            <EditForm Model="form" OnValidSubmit="SaveAsync" id="employee-form" class="form-stack">
+                <DataAnnotationsValidator />
+                <fieldset disabled="@(!canEdit)" class="form-stack">
+                    <div class="form-row">
+                        <label class="field">
+                            <span class="field-label">Employee ID</span>
+                            <InputText @bind-Value="form.EmployeeCode" class="input" />
+                            <ValidationMessage For="() => form.EmployeeCode" class="field-error" />
+                        </label>
+                        <label class="field grow">
+                            <span class="field-label">Full name</span>
+                            <InputText @bind-Value="form.FullName" class="input" />
+                            <ValidationMessage For="() => form.FullName" class="field-error" />
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label class="field grow">
+                            <span class="field-label">Position</span>
+                            <InputText @bind-Value="form.Position" class="input" placeholder="Baker, Cashier..." />
+                            <ValidationMessage For="() => form.Position" class="field-error" />
+                        </label>
+                        <label class="field grow">
+                            <span class="field-label">Department</span>
+                            <InputText @bind-Value="form.Department" class="input" />
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label class="field grow">
+                            <span class="field-label">Station</span>
+                            <InputSelect @bind-Value="form.StationId" class="input select">
+                                <option value="">Choose…</option>
+                                @foreach (var s in stations)
+                                {
+                                    <option value="@s.Id">@s.Name</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="() => form.StationId" class="field-error" />
+                        </label>
+                        <label class="field grow">
+                            <span class="field-label">Employment status</span>
+                            <InputSelect @bind-Value="form.EmploymentStatus" class="input select">
+                                @foreach (var s in SaveEmployee.Statuses) { <option value="@s">@s</option> }
+                            </InputSelect>
+                        </label>
+                        <label class="field grow">
+                            <span class="field-label">Type</span>
+                            <InputSelect @bind-Value="form.EmploymentType" class="input select">
+                                @foreach (var t in SaveEmployee.Types) { <option value="@t">@t</option> }
+                            </InputSelect>
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label class="field grow">
+                            <span class="field-label">Contact number</span>
+                            <InputText @bind-Value="form.ContactNumber" class="input" />
+                            <ValidationMessage For="() => form.ContactNumber" class="field-error" />
+                        </label>
+                        <label class="field grow">
+                            <span class="field-label">Email</span>
+                            <InputText @bind-Value="form.Email" class="input" />
+                            <ValidationMessage For="() => form.Email" class="field-error" />
+                        </label>
+                    </div>
+
+                    <div class="field">
+                        <span class="field-label">Available working days</span>
+                        <div class="day-toggles">
+                            @foreach (var day in Dates.DayCodes)
+                            {
+                                <button type="button" class="day-toggle @(form.AvailableDays.Contains(day) ? "on" : "")" @onclick="() => ToggleDay(day)">@day</button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <label class="field grow">
+                            <span class="field-label">Max hours per week</span>
+                            <InputNumber @bind-Value="form.MaxHoursPerWeek" class="input" />
+                            <ValidationMessage For="() => form.MaxHoursPerWeek" class="field-error" />
+                        </label>
+                        <label class="field grow">
+                            <span class="field-label">Usual rest day</span>
+                            <InputSelect @bind-Value="form.RestDay" class="input select">
+                                <option value="">None</option>
+                                @foreach (var day in Dates.DayCodes) { <option value="@day">@day</option> }
+                            </InputSelect>
+                        </label>
+                    </div>
+                </fieldset>
+            </EditForm>
+        }
+    </ChildContent>
+    <Footer>
+        @if (canEdit)
+        {
+            <button type="submit" form="employee-form" class="btn btn-primary" disabled="@saving">Save</button>
+        }
+        <button type="button" class="btn" @onclick="() => form = null">@(canEdit ? "Cancel" : "Close")</button>
+    </Footer>
+</SidePanel>
+
+<ConfirmDialog Open="confirmTarget is not null" Title="Deactivate employee?" Danger="true" ConfirmText="Deactivate"
+               Message="@($"{confirmTarget?.FullName} will be removed from all FUTURE schedules. Past attendance and schedules are kept. You can reactivate later.")"
+               OnCancel="() => confirmTarget = null" OnConfirm="() => SetActiveAsync(confirmTarget!, false)" />
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
+
+    private readonly GetEmployees.Filter filter = new();
+    private List<EmployeeRecord>? employees;
+    private List<Station> stations = [];
+    private SaveEmployee.Form? form;
+    private EmployeeRecord? confirmTarget;
+    private bool canEdit;
+    private bool saving;
+    private CancellationTokenSource? searchDelay;
+
+    private bool HasFilter => !string.IsNullOrWhiteSpace(filter.Search) || filter.StationId is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        canEdit = await User.IsInAnyRoleAsync(Roles.Owner, Roles.Manager);
+        stations = (await Config.LoadAsync()).Stations;
+    }
+
+    // Runs again when the top-bar search changes ?q= while we are already on this page
+    protected override async Task OnParametersSetAsync()
+    {
+        filter.Search = Query;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => employees = await GetHandler.HandleAsync(filter);
+
+    private async Task OnSearch(ChangeEventArgs e)
+    {
+        filter.Search = e.Value?.ToString();
+
+        // Wait until the user stops typing for a moment
+        searchDelay?.Cancel();
+        searchDelay = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(250, searchDelay.Token);
+            await LoadAsync();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private Task OnStation(ChangeEventArgs e)
+    {
+        filter.StationId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        return LoadAsync();
+    }
+
+    private Task OnInactive(ChangeEventArgs e)
+    {
+        filter.IncludeInactive = e.Value is true;
+        return LoadAsync();
+    }
+
+    private void AddNew() => form = new SaveEmployee.Form { StationId = stations.FirstOrDefault()?.Id };
+
+    private void Edit(EmployeeRecord e) => form = SaveEmployee.Form.From(e);
+
+    private void ToggleDay(string day)
+    {
+        if (form is null || !canEdit) return;
+        if (!form.AvailableDays.Remove(day)) form.AvailableDays.Add(day);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (form is null) return;
+        saving = true;
+        var result = await SaveHandler.HandleAsync(form);
+        saving = false;
+
+        if (!result.Ok)
+        {
+            Toasts.Error(result.Error!);
+            return;
+        }
+
+        Toasts.Success($"{form.FullName} saved");
+        form = null;
+        await LoadAsync();
+    }
+
+    private async Task SetActiveAsync(EmployeeRecord e, bool active)
+    {
+        confirmTarget = null;
+        await ActiveHandler.HandleAsync(e.Id, active);
+        Toasts.Success(active ? $"{e.FullName} reactivated" : $"{e.FullName} deactivated");
+        await LoadAsync();
+    }
+}

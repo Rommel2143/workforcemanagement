@@ -1,0 +1,284 @@
+@page "/attendance"
+@attribute [Authorize(Roles = Roles.Leaders)]
+@using CakeShopWorkforce.Web.Features.Analytics
+@inject GetDailyAttendance.Handler GetHandler
+@inject SaveAttendance.Handler SaveHandler
+@inject FillScheduledTimes.Handler FillHandler
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject Clock Clock
+
+<PageHeader Title="Attendance" Icon="clock" Subtitle="Record time in and time out. Changes save as soon as you leave a field.">
+    <button type="button" class="icon-btn" title="Previous day" @onclick="() => Go(date.AddDays(-1))"><Icon Name="chevron-left" Size="18" /></button>
+    <input type="date" class="input input-sm" value="@Format.DateIso(date)" max="@Format.DateIso(Clock.Today)" @onchange="OnDatePicked" aria-label="Date" />
+    <button type="button" class="icon-btn" title="Next day" disabled="@(date >= Clock.Today)" @onclick="() => Go(date.AddDays(1))"><Icon Name="chevron-right" Size="18" /></button>
+    <button type="button" class="btn btn-subtle btn-sm" @onclick="() => Go(Clock.Today)">Today</button>
+</PageHeader>
+
+@if (data is null)
+{
+    <Loading Rows="6" />
+}
+else
+{
+    var day = data.Day;
+
+    <div class="chip-row">
+        <span class="stat-chip"><strong>@day.Scheduled</strong> scheduled</span>
+        <span class="stat-chip success"><strong>@day.Present</strong> present</span>
+        <span class="stat-chip warning"><strong>@day.Late</strong> late</span>
+        <span class="stat-chip danger"><strong>@day.Absent</strong> absent</span>
+        <span class="stat-chip info"><strong>@day.OnLeave</strong> on leave</span>
+        <span class="stat-chip"><strong>@day.RestDay</strong> rest day</span>
+        @if (day.Pending > 0) { <span class="stat-chip"><strong>@day.Pending</strong> not in yet</span> }
+        @if (day.MissingTimeOut > 0) { <span class="stat-chip warning"><strong>@day.MissingTimeOut</strong> missing time-out</span> }
+        <span class="stat-chip"><strong>@day.LaborHours.ToString("0.#")</strong> labor hours</span>
+        <span class="toolbar-spacer"></span>
+        <button type="button" class="btn btn-sm" @onclick="FillAsync" title="Use scheduled start and end times for everyone without a record (only finished shifts today)">
+            <Icon Name="copy" Size="16" /> Fill scheduled times
+        </button>
+    </div>
+
+    @if (rows.Count == 0)
+    {
+        <EmptyState Icon="calendar" Title="Nobody is scheduled on this day" Message="Add shifts on the Schedule page, or record someone who worked without a schedule below.">
+            <a class="btn" href="schedule?week=@Format.DateIso(Dates.StartOfWeek(date))">Open schedule</a>
+        </EmptyState>
+    }
+    else
+    {
+        <Card Flush="true">
+            <div class="table-wrap">
+                <table class="table attendance-table">
+                    <thead>
+                        <tr>
+                            <th>Employee</th>
+                            <th>Schedule</th>
+                            <th>Time in</th>
+                            <th>Time out</th>
+                            <th class="num">Break</th>
+                            <th class="num">Worked</th>
+                            <th class="num">OT</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in rows)
+                        {
+                            var e = row.Facts;
+                            var a = e.Assignment;
+                            var station = data.Setup.FindStation(e.StationId);
+                            var readOnly = a?.AssignmentType is "RestDay" or "Leave" && row.TimeIn is null;
+                            <tr class="@(row.Saving ? "saving" : "")">
+                                <td>
+                                    <div class="person-cell">
+                                        <Avatar Name="@e.Employee.FullName" Size="sm" />
+                                        <div>
+                                            <div class="strong">@e.Employee.FullName</div>
+                                            <div class="muted small">
+                                                @if (station is not null) { <span class="station-dot" style="background:@station.Color"></span>@station.Name }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    @if (a is null) { <span class="muted">Not scheduled</span> }
+                                    else if (a.AssignmentType == "RestDay") { <span class="shift-chip rest">Rest</span> }
+                                    else if (a.AssignmentType == "Leave") { <span class="shift-chip leave">@(a.LeaveType ?? "Leave")</span> }
+                                    else { <span class="mono">@Format.TimeRange(a.StartTime, a.EndTime)</span> }
+                                </td>
+                                <td>
+                                    @if (row.IsAbsent) { <span class="muted">—</span> }
+                                    else
+                                    {
+                                        <div class="time-cell">
+                                            <input type="time" class="input input-sm" value="@row.TimeIn?.ToString("HH:mm")" disabled="@(readOnly || IsFuture)"
+                                                   @onchange="ev => SetTime(row, ev, true)" aria-label="Time in" />
+                                            @if (row.TimeIn is null && date == Clock.Today && !readOnly)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-subtle" @onclick="() => ClockNow(row, true)">Now</button>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                                <td>
+                                    @if (row.IsAbsent) { <span class="muted">—</span> }
+                                    else
+                                    {
+                                        <div class="time-cell">
+                                            <input type="time" class="input input-sm @(e.Result.MissingTimeOut ? "warn" : "")" value="@row.TimeOut?.ToString("HH:mm")"
+                                                   disabled="@(row.TimeIn is null || IsFuture)" @onchange="ev => SetTime(row, ev, false)" aria-label="Time out" />
+                                            @if (row.TimeIn is not null && row.TimeOut is null && date == Clock.Today)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-subtle" @onclick="() => ClockNow(row, false)">Now</button>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                                <td class="num">
+                                    <input type="number" class="input input-sm input-num" min="0" max="240" step="15" value="@row.BreakMinutes"
+                                           disabled="@(row.IsAbsent || row.TimeIn is null)" @onchange="ev => SetBreak(row, ev)" aria-label="Break minutes" />
+                                </td>
+                                <td class="num">@(e.Result.WorkedHours > 0 ? e.Result.WorkedHours.ToString("0.##") : "—")</td>
+                                <td class="num @(e.Result.OvertimeHours > 0 ? "text-warning" : "")">@(e.Result.OvertimeHours > 0 ? e.Result.OvertimeHours.ToString("0.##") : "")</td>
+                                <td>
+                                    <Badge Tone="@AttendanceMath.Tone(e.Result.Status)">@AttendanceMath.Label(e.Result.Status)</Badge>
+                                    @if (e.Result.LateMinutes > 0) { <span class="muted small"> @e.Result.LateMinutes min</span> }
+                                </td>
+                                <td class="row-actions">
+                                    @if (a?.AssignmentType == "Shift" && !IsFuture)
+                                    {
+                                        <button type="button" class="btn btn-sm @(row.IsAbsent ? "btn-danger" : "btn-subtle")" @onclick="() => ToggleAbsent(row)"
+                                                title="@(row.IsAbsent ? "Undo absent" : "Mark as absent")">
+                                            @(row.IsAbsent ? "Absent ✓" : "Mark absent")
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    }
+
+    @if (data.Others.Count > 0 && !IsFuture)
+    {
+        <div class="add-row">
+            <span class="muted">Someone worked without a schedule?</span>
+            <select class="input select input-sm" @bind="addEmployeeId" aria-label="Employee">
+                <option value="0">Choose employee…</option>
+                @foreach (var o in data.Others)
+                {
+                    <option value="@o.Id">@o.FullName</option>
+                }
+            </select>
+            <button type="button" class="btn btn-sm" disabled="@(addEmployeeId == 0)" @onclick="AddUnscheduled"><Icon Name="plus" Size="16" /> Add</button>
+        </div>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "date")] public string? DateParam { get; set; }
+
+    private DateTime date;
+    private GetDailyAttendance.Result? data;
+    private List<Row> rows = [];
+    private int addEmployeeId;
+
+    private bool IsFuture => date > Clock.Today;
+
+    /// <summary>Editable copy of one line. TimeOnly is what &lt;input type="time"&gt; works with.</summary>
+    private sealed class Row
+    {
+        public required EmployeeDay Facts { get; set; }
+        public TimeOnly? TimeIn { get; set; }
+        public TimeOnly? TimeOut { get; set; }
+        public int BreakMinutes { get; set; }
+        public bool IsAbsent { get; set; }
+        public bool Saving { get; set; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        date = DateTime.TryParse(DateParam, out var d) ? d.Date : Clock.Today;
+        await LoadAsync();
+    }
+
+    private void Go(DateTime value) => Nav.NavigateTo($"attendance?date={Format.DateIso(value)}");
+
+    private void OnDatePicked(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var d)) Go(d);
+    }
+
+    private async Task LoadAsync()
+    {
+        data = await GetHandler.HandleAsync(date);
+        rows = data.Day.Employees.Select(e => new Row
+        {
+            Facts = e,
+            TimeIn = ToTime(e.Attendance?.TimeIn),
+            TimeOut = ToTime(e.Attendance?.TimeOut),
+            BreakMinutes = e.Attendance?.BreakMinutes ?? (e.Assignment is { IsShift: true } a ? a.BreakMinutes : 60),
+            IsAbsent = e.Attendance?.IsAbsent ?? false
+        }).ToList();
+    }
+
+    private Task SetTime(Row row, ChangeEventArgs e, bool isIn)
+    {
+        var value = TimeOnly.TryParse(e.Value?.ToString(), out var t) ? t : (TimeOnly?)null;
+        if (isIn)
+        {
+            row.TimeIn = value;
+            if (value is null) row.TimeOut = null;
+        }
+        else row.TimeOut = value;
+        return SaveRowAsync(row);
+    }
+
+    private Task ClockNow(Row row, bool isIn)
+    {
+        var now = TimeOnly.FromDateTime(Clock.Now);
+        now = new TimeOnly(now.Hour, now.Minute);
+        if (isIn) row.TimeIn = now; else row.TimeOut = now;
+        return SaveRowAsync(row);
+    }
+
+    private Task SetBreak(Row row, ChangeEventArgs e)
+    {
+        row.BreakMinutes = int.TryParse(e.Value?.ToString(), out var m) ? m : 60;
+        return SaveRowAsync(row);
+    }
+
+    private Task ToggleAbsent(Row row)
+    {
+        row.IsAbsent = !row.IsAbsent;
+        return SaveRowAsync(row);
+    }
+
+    private async Task SaveRowAsync(Row row)
+    {
+        row.Saving = true;
+        var result = await SaveHandler.HandleAsync(new SaveAttendance.Command
+        {
+            EmployeeId = row.Facts.Employee.Id,
+            Date = date,
+            TimeIn = row.TimeIn?.ToTimeSpan(),
+            TimeOut = row.TimeOut?.ToTimeSpan(),
+            BreakMinutes = row.BreakMinutes,
+            IsAbsent = row.IsAbsent,
+            Note = row.Facts.Attendance?.Note
+        });
+        row.Saving = false;
+
+        if (!result.Ok) Toasts.Error(result.Error!);
+        await LoadAsync();   // recalculates status, worked hours and totals
+    }
+
+    private async Task FillAsync()
+    {
+        var filled = await FillHandler.HandleAsync(date);
+        if (filled == 0) Toasts.Info("Nothing to fill — everyone already has a record, or their shift hasn't ended.");
+        else Toasts.Success($"Filled {filled} row(s) with scheduled times. Adjust anyone who came late or left early.");
+        await LoadAsync();
+    }
+
+    private async Task AddUnscheduled()
+    {
+        if (addEmployeeId == 0) return;
+        var now = date == Clock.Today ? TimeOnly.FromDateTime(Clock.Now) : new TimeOnly(8, 0);
+        var result = await SaveHandler.HandleAsync(new SaveAttendance.Command
+        {
+            EmployeeId = addEmployeeId,
+            Date = date,
+            TimeIn = new TimeSpan(now.Hour, now.Minute, 0)
+        });
+        if (!result.Ok) Toasts.Error(result.Error!);
+        addEmployeeId = 0;
+        await LoadAsync();
+    }
+
+    private static TimeOnly? ToTime(TimeSpan? t) => t is null ? null : TimeOnly.FromTimeSpan(t.Value);
+}

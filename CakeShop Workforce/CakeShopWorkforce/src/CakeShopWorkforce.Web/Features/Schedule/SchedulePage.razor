@@ -1,0 +1,570 @@
+@page "/schedule"
+@attribute [Authorize(Roles = Roles.Leaders)]
+@using CakeShopWorkforce.Web.Features.Analytics
+@inject GetWeekSchedule.Handler WeekHandler
+@inject GetMonthSchedule.Handler MonthHandler
+@inject SaveAssignment.Handler SaveHandler
+@inject ClearAssignment.Handler ClearHandler
+@inject CopyWeek.Handler CopyHandler
+@inject FillRestDays.Handler RestHandler
+@inject PublishWeek.Handler PublishHandler
+@inject CurrentUser User
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject Clock Clock
+
+@*
+    The schedule planner.
+      WEEK view  : employees (rows) × days (columns). Drag a shift from the palette onto a cell,
+                   or click a cell to edit it in the side panel.
+      MONTH view : calendar with headcount per day. Click a day to open its week.
+    Supervisors can look but not change anything.
+*@
+
+<PageHeader Title="Schedule" Icon="calendar" Subtitle="@(View == "month" ? "Headcount per day. Click a day to open its week." : canEdit ? "Drag a shift onto a cell, or click a cell to edit it." : "Read only — managers build and publish the schedule.")">
+    <div class="segmented">
+        <button type="button" class="@(View == "month" ? "" : "active")" @onclick='() => Go(anchor, "week")'>Week</button>
+        <button type="button" class="@(View == "month" ? "active" : "")" @onclick='() => Go(anchor, "month")'>Month</button>
+    </div>
+    <button type="button" class="icon-btn" title="Previous" @onclick='() => Go(View == "month" ? anchor.AddMonths(-1) : anchor.AddDays(-7), View)'><Icon Name="chevron-left" Size="18" /></button>
+    <span class="period-label">@RangeLabel</span>
+    <button type="button" class="icon-btn" title="Next" @onclick='() => Go(View == "month" ? anchor.AddMonths(1) : anchor.AddDays(7), View)'><Icon Name="chevron-right" Size="18" /></button>
+    <button type="button" class="btn btn-subtle btn-sm" @onclick="() => Go(Clock.Today, View)">Today</button>
+</PageHeader>
+
+@if (View == "month")
+{
+    @if (month is null)
+    {
+        <Loading Rows="6" />
+    }
+    else
+    {
+        <Card Flush="true">
+            <div class="month-grid">
+                @foreach (var dayName in Dates.DayCodes)
+                {
+                    <div class="month-head">@dayName</div>
+                }
+                @foreach (var day in month.Days)
+                {
+                    var outside = day.Date.Month != month.MonthStart.Month;
+                    var isMonday = day.Date.DayOfWeek == DayOfWeek.Monday;
+                    <button type="button" class="month-cell @(outside ? "outside" : "") @(day.Date == Clock.Today ? "today" : "")" @onclick='() => Go(day.Date, "week")'>
+                        <div class="month-date">
+                            <span>@day.Date.Day</span>
+                            @if (isMonday && month.Weeks.TryGetValue(day.Date, out var ws) && ws.IsPublished)
+                            {
+                                <Badge Tone="@(ws.ChangedAfterPublish ? "warning" : "success")">@(ws.ChangedAfterPublish ? "Changed" : "Published")</Badge>
+                            }
+                        </div>
+                        @if (day.Shifts + day.RestDays + day.Leaves > 0)
+                        {
+                            <div class="month-count"><strong>@day.Shifts</strong> working</div>
+                            <div class="month-chips">
+                                @foreach (var t in day.Templates)
+                                {
+                                    <span class="mini-chip" style="--c:@t.Color">@t.Code @t.Count</span>
+                                }
+                            </div>
+                            <div class="muted small">
+                                @if (day.RestDays > 0) { <span>@day.RestDays rest</span> }
+                                @if (day.Leaves > 0) { <span> · @day.Leaves leave</span> }
+                            </div>
+                            @if (day.ShortStations.Count > 0)
+                            {
+                                <div class="text-danger small" title="Below minimum headcount"><Icon Name="alert" Size="12" /> @string.Join(", ", day.ShortStations)</div>
+                            }
+                        }
+                    </button>
+                }
+            </div>
+        </Card>
+    }
+}
+else if (week is null)
+{
+    <Loading Rows="8" />
+}
+else
+{
+    <div class="schedule-bar">
+        <div class="schedule-status">
+            @if (week.Status.IsPublished)
+            {
+                <Badge Tone="@(week.Status.ChangedAfterPublish ? "warning" : "success")" Dot="true">
+                    @(week.Status.ChangedAfterPublish ? "Changed after publishing" : "Published")
+                </Badge>
+                <span class="muted small">by @week.Status.PublishedBy @(week.Status.PublishedAt?.ToLocalTime().ToString("MMM d, h:mm tt"))</span>
+            }
+            else
+            {
+                <Badge Tone="neutral" Dot="true">Draft</Badge>
+                <span class="muted small">Staff see draft shifts marked "not final".</span>
+            }
+        </div>
+        @if (canEdit)
+        {
+            <div class="schedule-actions">
+                <button type="button" class="btn btn-sm" @onclick="CopyLastWeekAsync" title="Copy last week's shifts into empty cells"><Icon Name="copy" Size="16" /> Copy last week</button>
+                <button type="button" class="btn btn-sm" @onclick="FillRestDaysAsync" title="Add each person's usual rest day"><Icon Name="moon" Size="16" /> Fill rest days</button>
+                <button type="button" class="btn btn-primary btn-sm" @onclick="() => askPublish = true">
+                    <Icon Name="send" Size="16" /> @(week.Status.IsPublished ? "Re-publish" : "Publish")
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (canEdit)
+    {
+        <div class="palette" aria-label="Shift palette">
+            <span class="palette-label"><Icon Name="drag" Size="16" /> Drag:</span>
+            @foreach (var t in week.Setup.ShiftTemplates.Where(t => t.IsActive))
+            {
+                <span class="shift-chip draggable" draggable="true" data-drag="t:@t.Id" style="--c:@t.Color"
+                      @ondragstart="() => dragging = new DragItem(t.Id, null)" title="@t.Name · @t.PaidHours.ToString("0.#") paid hours">
+                    <strong>@t.Code</strong> @Format.TimeRange(t.StartTime, t.EndTime)
+                </span>
+            }
+            <span class="shift-chip draggable rest" draggable="true" data-drag="rest" @ondragstart='() => dragging = new DragItem(null, "RestDay")'>Rest day</span>
+            <span class="shift-chip draggable leave" draggable="true" data-drag="leave" @ondragstart='() => dragging = new DragItem(null, "Leave")'>Leave</span>
+        </div>
+    }
+
+    @if (week.Employees.Count == 0)
+    {
+        <EmptyState Icon="people" Title="No employees to schedule" Message="Add employees first, then come back to build the schedule.">
+            <a class="btn btn-primary" href="employees">Go to People</a>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="schedule-wrap">
+            <table class="schedule-grid">
+                <thead>
+                    <tr>
+                        <th class="sticky-col">Employee</th>
+                        @foreach (var d in week.Days)
+                        {
+                            <th class="@(d == Clock.Today ? "today" : "")">
+                                <div class="day-head">
+                                    <span>@Dates.DayCode(d)</span>
+                                    <strong>@d.Day</strong>
+                                </div>
+                            </th>
+                        }
+                        <th class="num">Hours</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in week.Employees)
+                    {
+                        var station = week.Setup.FindStation(e.StationId);
+                        var hours = week.WeekHours(e.Id);
+                        <tr class="@(e.IsActive ? "" : "inactive")">
+                            <td class="sticky-col">
+                                <div class="person-cell">
+                                    <Avatar Name="@e.FullName" Size="sm" />
+                                    <div>
+                                        <div class="strong">@e.FullName</div>
+                                        <div class="muted small">
+                                            @if (station is not null) { <span class="station-dot" style="background:@station.Color"></span>@station.Name }
+                                            @if (!e.IsActive) { <text> · inactive</text> }
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                            @foreach (var d in week.Days)
+                            {
+                                var cell = week.Cell(e.Id, d);
+                                var hasWarning = week.Warnings.Any(w => w.EmployeeId == e.Id && w.Date == d && w.Severity != "info");
+                                <td class="cell @(canEdit ? "editable" : "") @(d == Clock.Today ? "today" : "") @(hasWarning ? "has-warning" : "") @(dropTarget == (e.Id, d) ? "drop-over" : "")"
+                                    @onclick="() => OpenCell(e, d)"
+                                    @ondragover:preventDefault="true"
+                                    @ondragenter="() => dropTarget = (e.Id, d)"
+                                    @ondragleave="() => { if (dropTarget == (e.Id, d)) dropTarget = null; }"
+                                    @ondrop="() => DropAsync(e, d)">
+                                    @if (cell is null)
+                                    {
+                                        @if (canEdit) { <span class="cell-add"><Icon Name="plus" Size="14" /></span> }
+                                    }
+                                    else if (cell.AssignmentType == "RestDay")
+                                    {
+                                        <span class="shift-chip rest">Rest</span>
+                                    }
+                                    else if (cell.AssignmentType == "Leave")
+                                    {
+                                        <span class="shift-chip leave" title="@cell.Note">@(cell.LeaveType ?? "Leave")</span>
+                                    }
+                                    else
+                                    {
+                                        var template = week.Setup.FindTemplate(cell.ShiftTemplateId);
+                                        var cellStation = week.Setup.FindStation(cell.StationId);
+                                        <span class="shift-chip" style="--c:@(template?.Color ?? "#616161")" title="@(cell.Note ?? template?.Name)">
+                                            <strong>@(template?.Code ?? "Custom")</strong>
+                                            <span>@Format.TimeRange(cell.StartTime, cell.EndTime)</span>
+                                            @if (cellStation is not null && cellStation.Id != e.StationId)
+                                            {
+                                                <span class="chip-station" style="background:@cellStation.Color" title="Working at @cellStation.Name"></span>
+                                            }
+                                        </span>
+                                    }
+                                </td>
+                            }
+                            <td class="num @(hours > e.MaxHoursPerWeek ? "text-danger strong" : "")" title="Max @e.MaxHoursPerWeek h">@hours.ToString("0.#")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr class="foot-total">
+                        <td class="sticky-col">Working <span class="muted small">(forecast ideal)</span></td>
+                        @foreach (var d in week.Days)
+                        {
+                            var count = week.Headcount(d);
+                            var ideal = week.Ideal(d);
+                            <td class="@(ideal is not null && count < ideal ? "short" : "")" title="@(ideal is null ? "No sales history for this weekday yet" : $"Forecast ~{week.Forecasts[d].Transactions:N0} transactions")">
+                                <strong>@count</strong>@if (ideal is not null) { <span class="muted"> / @ideal</span> }
+                            </td>
+                        }
+                        <td class="num">@week.Employees.Sum(e => week.WeekHours(e.Id)).ToString("0.#")</td>
+                    </tr>
+                    @foreach (var s in week.Setup.Stations)
+                    {
+                        <tr class="foot-station">
+                            <td class="sticky-col"><span class="station-dot" style="background:@s.Color"></span>@s.Name <span class="muted small">min @s.MinHeadcount</span></td>
+                            @foreach (var d in week.Days)
+                            {
+                                var count = week.StationCount(d, s.Id);
+                                var any = week.Headcount(d) > 0;
+                                <td class="@(any && count < s.MinHeadcount ? "short" : "")">@(any ? count : "–")</td>
+                            }
+                            <td></td>
+                        </tr>
+                    }
+                </tfoot>
+            </table>
+        </div>
+
+        <Card Title="Schedule checks" Subtitle="Run on every change. Fix these before publishing.">
+            @if (week.Warnings.Count == 0)
+            {
+                <div class="ok-line"><Icon Name="check" Size="18" /> No problems found for this week.</div>
+            }
+            else
+            {
+                <ul class="warning-list">
+                    @foreach (var w in week.Warnings)
+                    {
+                        <li class="w-@w.Severity">
+                            <Icon Name="@(w.Severity == "info" ? "info" : "alert")" Size="16" />
+                            <span>@w.Message</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </Card>
+    }
+}
+
+@* ---------- Edit one cell ---------- *@
+<SidePanel Open="editing is not null" Title="@(editing?.EmployeeName ?? "")" Subtitle="@(editing is null ? null : Format.DateLong(editing.Date))" OnClose="() => editing = null">
+    <ChildContent>
+        @if (editing is not null && week is not null)
+        {
+            <div class="form-stack">
+                <div class="segmented full">
+                    @foreach (var (type, label) in new[] { ("Shift", "Shift"), ("RestDay", "Rest day"), ("Leave", "Leave") })
+                    {
+                        <button type="button" class="@(editing.Type == type ? "active" : "")" @onclick="() => editing.Type = type">@label</button>
+                    }
+                </div>
+
+                @if (editing.Type == "Shift")
+                {
+                    <div class="field">
+                        <span class="field-label">Shift template</span>
+                        <div class="template-pick">
+                            @foreach (var t in week.Setup.ShiftTemplates.Where(t => t.IsActive))
+                            {
+                                <button type="button" class="shift-chip big @(editing.TemplateId == t.Id ? "selected" : "")" style="--c:@t.Color" @onclick="() => PickTemplate(t)">
+                                    <strong>@t.Code</strong> @Format.TimeRange(t.StartTime, t.EndTime)
+                                </button>
+                            }
+                            <button type="button" class="shift-chip big @(editing.TemplateId is null ? "selected" : "")" style="--c:#616161" @onclick="() => editing.TemplateId = null">Custom</button>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label class="field grow">
+                            <span class="field-label">Start</span>
+                            <input type="time" class="input" value="@editing.Start?.ToString("HH:mm")" @onchange="e => editing.Start = ParseTime(e)" />
+                        </label>
+                        <label class="field grow">
+                            <span class="field-label">End</span>
+                            <input type="time" class="input" value="@editing.End?.ToString("HH:mm")" @onchange="e => editing.End = ParseTime(e)" />
+                        </label>
+                        <label class="field">
+                            <span class="field-label">Break (min)</span>
+                            <input type="number" class="input" min="0" max="240" step="15" @bind="editing.BreakMinutes" />
+                        </label>
+                    </div>
+                    @if (editing.Start is not null && editing.End is not null)
+                    {
+                        var paid = ShiftMath.PaidHours(editing.Start.Value.ToTimeSpan(), editing.End.Value.ToTimeSpan(), editing.BreakMinutes);
+                        <div class="muted small">@paid.ToString("0.#") paid hours@(paid > week.Setup.Store.RegularHoursPerDay ? $" — {paid - week.Setup.Store.RegularHoursPerDay:0.#} h overtime" : "")</div>
+                    }
+                    <label class="field">
+                        <span class="field-label">Station</span>
+                        <select class="input select" value="@(editing.StationId?.ToString() ?? "")" @onchange="e => editing.StationId = int.TryParse(e.Value?.ToString(), out var id) ? id : null">
+                            @foreach (var s in week.Setup.Stations)
+                            {
+                                <option value="@s.Id">@s.Name</option>
+                            }
+                        </select>
+                    </label>
+                }
+                else if (editing.Type == "Leave")
+                {
+                    <label class="field">
+                        <span class="field-label">Leave type</span>
+                        <select class="input select" @bind="editing.LeaveType">
+                            @foreach (var lt in SaveAssignment.LeaveTypes) { <option value="@lt">@lt</option> }
+                        </select>
+                    </label>
+                    <div class="muted small">Approved leave is never counted as an absence.</div>
+                }
+                else
+                {
+                    <div class="muted small">Rest days are never counted as absences. Philippine labor rules require a 24-hour rest after 6 consecutive work days.</div>
+                }
+
+                <label class="field">
+                    <span class="field-label">Note (optional)</span>
+                    <input class="input" @bind="editing.Note" maxlength="200" />
+                </label>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-primary" @onclick="SaveCellAsync" disabled="@busy">Save</button>
+        @if (editing?.Exists == true)
+        {
+            <button type="button" class="btn btn-danger-subtle" @onclick="ClearCellAsync" disabled="@busy"><Icon Name="trash" Size="16" /> Clear</button>
+        }
+        <button type="button" class="btn" @onclick="() => editing = null">Cancel</button>
+    </Footer>
+</SidePanel>
+
+<ConfirmDialog Open="askPublish" Title="Publish this week?" ConfirmText="Publish"
+               Message="@PublishMessage()" OnCancel="() => askPublish = false" OnConfirm="PublishAsync" />
+
+@code {
+    [SupplyParameterFromQuery(Name = "week")] public string? WeekParam { get; set; }
+    [SupplyParameterFromQuery(Name = "view")] public string? View { get; set; }
+
+    private DateTime anchor;
+    private GetWeekSchedule.Result? week;
+    private GetMonthSchedule.Result? month;
+    private bool canEdit;
+    private bool busy;
+    private bool askPublish;
+    private DragItem? dragging;
+    private (int, DateTime)? dropTarget;
+    private CellEdit? editing;
+
+    private sealed record DragItem(int? TemplateId, string? Type);
+
+    /// <summary>The side-panel form for one cell.</summary>
+    private sealed class CellEdit
+    {
+        public int EmployeeId { get; init; }
+        public string EmployeeName { get; init; } = "";
+        public DateTime Date { get; init; }
+        public bool Exists { get; init; }
+        public string Type { get; set; } = "Shift";
+        public int? TemplateId { get; set; }
+        public TimeOnly? Start { get; set; }
+        public TimeOnly? End { get; set; }
+        public int BreakMinutes { get; set; } = 60;
+        public int? StationId { get; set; }
+        public string LeaveType { get; set; } = "Vacation";
+        public string? Note { get; set; }
+    }
+
+    private string RangeLabel => View == "month"
+        ? anchor.ToString("MMMM yyyy")
+        : $"{Dates.StartOfWeek(anchor):MMM d} – {Dates.StartOfWeek(anchor).AddDays(6):MMM d, yyyy}";
+
+    protected override async Task OnInitializedAsync() =>
+        canEdit = await User.IsInAnyRoleAsync(Roles.Owner, Roles.Manager);
+
+    // Runs whenever ?week= or ?view= changes
+    protected override async Task OnParametersSetAsync()
+    {
+        anchor = DateTime.TryParse(WeekParam, out var d) ? d.Date : Clock.Today;
+        await LoadAsync();
+    }
+
+    private void Go(DateTime date, string? view)
+    {
+        var url = $"schedule?week={Format.DateIso(view == "month" ? Dates.StartOfMonth(date) : Dates.StartOfWeek(date))}";
+        if (view == "month") url += "&view=month";
+        Nav.NavigateTo(url);
+    }
+
+    private async Task LoadAsync()
+    {
+        if (View == "month")
+        {
+            month = null;
+            month = await MonthHandler.HandleAsync(anchor);
+        }
+        else
+        {
+            week = await WeekHandler.HandleAsync(anchor);
+        }
+    }
+
+    // ---- Drag & drop --------------------------------------------------------
+
+    private async Task DropAsync(EmployeeInfo employee, DateTime date)
+    {
+        dropTarget = null;
+        if (!canEdit || dragging is null) return;
+        var item = dragging;
+        dragging = null;
+
+        await SaveAsync(new SaveAssignment.Command
+        {
+            EmployeeId = employee.Id,
+            Date = date,
+            Type = item.Type ?? "Shift",
+            TemplateId = item.TemplateId,
+            StationId = week?.Cell(employee.Id, date)?.StationId   // keep a station that was chosen before
+        });
+    }
+
+    // ---- Side panel ---------------------------------------------------------
+
+    private void OpenCell(EmployeeInfo employee, DateTime date)
+    {
+        if (!canEdit || week is null) return;
+        var cell = week.Cell(employee.Id, date);
+        var template = week.Setup.FindTemplate(cell?.ShiftTemplateId) ?? week.Setup.ShiftTemplates.FirstOrDefault(t => t.IsActive);
+
+        editing = new CellEdit
+        {
+            EmployeeId = employee.Id,
+            EmployeeName = employee.FullName,
+            Date = date,
+            Exists = cell is not null,
+            Type = cell?.AssignmentType ?? "Shift",
+            TemplateId = cell is null ? template?.Id : cell.ShiftTemplateId,
+            Start = ToTime(cell?.StartTime ?? template?.StartTime),
+            End = ToTime(cell?.EndTime ?? template?.EndTime),
+            BreakMinutes = cell is { IsShift: true } ? cell.BreakMinutes : template?.BreakMinutes ?? 60,
+            StationId = cell?.StationId ?? employee.StationId ?? week.Setup.Stations.FirstOrDefault()?.Id,
+            LeaveType = cell?.LeaveType ?? "Vacation",
+            Note = cell?.Note
+        };
+    }
+
+    private void PickTemplate(ShiftTemplate t)
+    {
+        if (editing is null) return;
+        editing.TemplateId = t.Id;
+        editing.Start = ToTime(t.StartTime);
+        editing.End = ToTime(t.EndTime);
+        editing.BreakMinutes = t.BreakMinutes;
+    }
+
+    private async Task SaveCellAsync()
+    {
+        if (editing is null) return;
+
+        // Times typed by hand that differ from the template make it a custom shift
+        var template = week?.Setup.FindTemplate(editing.TemplateId);
+        var templateId = template is not null && ToTime(template.StartTime) == editing.Start && ToTime(template.EndTime) == editing.End
+            ? template.Id : (int?)null;
+
+        var ok = await SaveAsync(new SaveAssignment.Command
+        {
+            EmployeeId = editing.EmployeeId,
+            Date = editing.Date,
+            Type = editing.Type,
+            TemplateId = templateId,
+            StationId = editing.StationId,
+            StartTime = editing.Start?.ToTimeSpan(),
+            EndTime = editing.End?.ToTimeSpan(),
+            BreakMinutes = editing.BreakMinutes,
+            LeaveType = editing.LeaveType,
+            Note = editing.Note
+        });
+        if (ok) editing = null;
+    }
+
+    private async Task ClearCellAsync()
+    {
+        if (editing is null) return;
+        busy = true;
+        await ClearHandler.HandleAsync(editing.EmployeeId, editing.Date);
+        busy = false;
+        editing = null;
+        await LoadAsync();
+    }
+
+    private async Task<bool> SaveAsync(SaveAssignment.Command cmd)
+    {
+        busy = true;
+        var result = await SaveHandler.HandleAsync(cmd);
+        busy = false;
+        if (!result.Ok)
+        {
+            Toasts.Error(result.Error!);
+            return false;
+        }
+        await LoadAsync();
+        return true;
+    }
+
+    // ---- Week actions -------------------------------------------------------
+
+    private async Task CopyLastWeekAsync()
+    {
+        var start = Dates.StartOfWeek(anchor);
+        var copied = await CopyHandler.HandleAsync(start.AddDays(-7), start);
+        if (copied == 0) Toasts.Info("Nothing to copy — last week is empty or every cell here is already filled.");
+        else Toasts.Success($"Copied {copied} entries from last week into empty cells.");
+        await LoadAsync();
+    }
+
+    private async Task FillRestDaysAsync()
+    {
+        var added = await RestHandler.HandleAsync(Dates.StartOfWeek(anchor));
+        if (added == 0) Toasts.Info("No empty cells on anyone's usual rest day.");
+        else Toasts.Success($"Added {added} rest days.");
+        await LoadAsync();
+    }
+
+    private string PublishMessage()
+    {
+        if (week is null) return "";
+        var problems = week.Warnings.Count(w => w.Severity is "error" or "warning");
+        return problems == 0
+            ? "Staff will see this week as final. Later changes are tracked and flagged."
+            : $"There are {problems} unresolved schedule warning(s). You can still publish; staff will see this week as final.";
+    }
+
+    private async Task PublishAsync()
+    {
+        askPublish = false;
+        var result = await PublishHandler.HandleAsync(Dates.StartOfWeek(anchor));
+        if (result.Ok) Toasts.Success("Schedule published");
+        else Toasts.Error(result.Error!);
+        await LoadAsync();
+    }
+
+    private static TimeOnly? ToTime(TimeSpan? t) => t is null ? null : TimeOnly.FromTimeSpan(t.Value);
+
+    private static TimeOnly? ParseTime(ChangeEventArgs e) =>
+        TimeOnly.TryParse(e.Value?.ToString(), out var t) ? t : null;
+}

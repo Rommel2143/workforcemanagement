@@ -1,0 +1,24 @@
+@implements IDisposable
+@inject ToastService Toasts
+
+@* Draws the pop-up messages from ToastService. Placed once in MainLayout. *@
+
+<div class="toast-host" aria-live="polite">
+    @foreach (var toast in Toasts.Items.ToList())
+    {
+        <div class="toast toast-@toast.Tone" @key="toast.Id">
+            <Icon Name="@(toast.Tone == "success" ? "check" : toast.Tone == "danger" ? "alert" : "info")" Size="18" />
+            <span>@toast.Message</span>
+            <button type="button" class="icon-btn small" @onclick="() => Toasts.Dismiss(toast.Id)"><Icon Name="close" Size="14" /></button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Toasts.Changed += OnChanged;
+
+    // Toasts can be removed from a background timer, so switch back to the UI thread
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Toasts.Changed -= OnChanged;
+}

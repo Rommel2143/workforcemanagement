@@ -1,0 +1,30 @@
+@* Top of every page: title, optional subtitle, and buttons on the right. *@
+
+<PageTitle>@Title · CakeShop Workforce</PageTitle>
+
+<div class="page-header">
+    <div class="page-heading">
+        @if (Icon is not null)
+        {
+            <span class="page-icon"><Icon Name="@Icon" Size="22" /></span>
+        }
+        <div>
+            <h1>@Title</h1>
+            @if (Subtitle is not null)
+            {
+                <div class="page-subtitle">@Subtitle</div>
+            }
+        </div>
+    </div>
+    @if (ChildContent is not null)
+    {
+        <div class="page-actions">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,14 @@
+@* One icon + label button in the left rail. NavLink adds the "active" class on the current page. *@
+
+<NavLink class="rail-item" href="@Href" Match="Match" title="@Text">
+    <span class="rail-indicator"></span>
+    <Icon Name="@Icon" Size="22" />
+    <span class="rail-text">@Text</span>
+</NavLink>
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = "";
+    [Parameter, EditorRequired] public string Icon { get; set; } = "";
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public NavLinkMatch Match { get; set; } = NavLinkMatch.Prefix;
+}

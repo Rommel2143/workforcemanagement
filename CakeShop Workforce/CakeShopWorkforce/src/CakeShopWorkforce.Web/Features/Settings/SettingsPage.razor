@@ -1,0 +1,494 @@
+@page "/settings"
+@attribute [Authorize(Roles = Roles.Managers)]
+@using CakeShopWorkforce.Web.Features.Employees
+@inject StoreConfig Config
+@inject SaveStore.Handler StoreHandler
+@inject SaveStation.Handler StationHandler
+@inject DeleteStation.Handler DeleteStationHandler
+@inject SaveShiftTemplate.Handler TemplateHandler
+@inject GetUsers.Handler UsersHandler
+@inject SaveUser.Handler SaveUserHandler
+@inject ResetPassword.Handler ResetHandler
+@inject GetAuditLog.Handler AuditHandler
+@inject GetDemoStatus.Handler DemoStatus
+@inject LoadDemoData.Handler LoadDemo
+@inject RemoveDemoData.Handler RemoveDemo
+@inject GetEmployees.Handler EmployeesHandler
+@inject CurrentUser User
+@inject NavigationManager Nav
+@inject ToastService Toasts
+
+<PageHeader Title="Settings" Icon="settings" Subtitle="Store rules, stations, shift templates, logins and the audit trail." />
+
+<div class="tabs" role="tablist">
+    @foreach (var (key, label) in Tabs)
+    {
+        <button type="button" role="tab" class="tab @(Tab == key ? "active" : "")" @onclick='() => Nav.NavigateTo($"settings?tab={key}")'>@label</button>
+    }
+</div>
+
+@if (setup is null)
+{
+    <Loading Rows="6" />
+}
+else if (Tab == "store" && storeForm is not null)
+{
+    <Card Title="Store" Subtitle="These rules drive lateness, overtime and the ideal-manpower formulas.">
+        <EditForm Model="storeForm" OnValidSubmit="SaveStoreAsync" class="form-stack narrow">
+            <DataAnnotationsValidator />
+            <label class="field">
+                <span class="field-label">Store name</span>
+                <InputText @bind-Value="storeForm.Name" class="input" />
+                <ValidationMessage For="() => storeForm.Name" class="field-error" />
+            </label>
+            <div class="form-row">
+                <label class="field grow"><span class="field-label">Opens</span><input type="time" class="input" @bind="storeForm.OpenTime" /></label>
+                <label class="field grow"><span class="field-label">Closes</span><input type="time" class="input" @bind="storeForm.CloseTime" /></label>
+            </div>
+            <div class="form-row">
+                <label class="field grow">
+                    <span class="field-label">Grace period (minutes)</span>
+                    <InputNumber @bind-Value="storeForm.GraceMinutes" class="input" />
+                    <span class="field-help">Clocking in later than this after the shift start counts as late.</span>
+                </label>
+                <label class="field grow">
+                    <span class="field-label">Regular hours per day</span>
+                    <InputNumber @bind-Value="storeForm.RegularHoursPerDay" class="input" />
+                    <span class="field-help">Worked hours above this are overtime (PH default: 8).</span>
+                </label>
+            </div>
+            <div class="form-row">
+                <label class="field grow">
+                    <span class="field-label">Target transactions per personnel (day)</span>
+                    <InputNumber @bind-Value="storeForm.TargetTxPerPersonnel" class="input" />
+                    <span class="field-help">Used by the simple formula CEILING(transactions ÷ target).</span>
+                </label>
+                <label class="field grow">
+                    <span class="field-label">Target transactions per person-hour</span>
+                    <InputNumber @bind-Value="storeForm.TargetTxPerPersonHour" class="input" />
+                    <span class="field-help">Counter staff (Cashier + Sales) per hour — drives hourly coverage and shift suggestions.</span>
+                </label>
+            </div>
+            <label class="field">
+                <span class="field-label">Overtime alert (hours per person in 7 days)</span>
+                <InputNumber @bind-Value="storeForm.WeeklyOtAlertHours" class="input" />
+            </label>
+            <ValidationSummary class="field-error" />
+            <div><button type="submit" class="btn btn-primary">Save store settings</button></div>
+        </EditForm>
+    </Card>
+}
+else if (Tab == "stations")
+{
+    <Card Title="Stations & targets" Subtitle="Transaction-driven stations grow with customers; fixed stations always need their minimum." Flush="true">
+        <Actions><button type="button" class="btn btn-primary btn-sm" @onclick='() => station = new Station { Color = "#5B5FC7", Driver = "Fixed", MinHeadcount = 1 }'><Icon Name="plus" Size="16" /> Add station</button></Actions>
+        <ChildContent>
+            <table class="table hover">
+                <thead><tr><th>Station</th><th>Workload driver</th><th class="num">Target tx / person / day</th><th class="num">Min headcount</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var s in setup.Stations)
+                    {
+                        <tr @onclick="() => station = Clone(s)">
+                            <td><span class="station-dot" style="background:@s.Color"></span>@s.Name</td>
+                            <td>@(s.IsTransactionDriven ? "Transactions" : "Fixed")</td>
+                            <td class="num">@(s.TargetTxPerPerson?.ToString() ?? "—")</td>
+                            <td class="num">@s.MinHeadcount</td>
+                            <td class="row-actions"><button type="button" class="icon-btn" title="Edit"><Icon Name="edit" Size="16" /></button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </ChildContent>
+    </Card>
+}
+else if (Tab == "shifts")
+{
+    <Card Title="Shift templates" Subtitle="The shifts you drag onto the schedule. Inactive templates stay on old schedules but are hidden from the palette." Flush="true">
+        <Actions><button type="button" class="btn btn-primary btn-sm" @onclick='() => template = new ShiftTemplate { Color = "#5B5FC7", StartTime = new TimeSpan(8, 0, 0), EndTime = new TimeSpan(17, 0, 0), BreakMinutes = 60, IsActive = true }'><Icon Name="plus" Size="16" /> Add template</button></Actions>
+        <ChildContent>
+            <table class="table hover">
+                <thead><tr><th>Code</th><th>Name</th><th>Time</th><th class="num">Break</th><th class="num">Paid hours</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var t in setup.ShiftTemplates)
+                    {
+                        <tr class="@(t.IsActive ? "" : "inactive")" @onclick="() => template = Clone(t)">
+                            <td><span class="shift-chip" style="--c:@t.Color"><strong>@t.Code</strong></span></td>
+                            <td>@t.Name</td>
+                            <td>@Format.Time(t.StartTime) – @Format.Time(t.EndTime)</td>
+                            <td class="num">@t.BreakMinutes min</td>
+                            <td class="num">@t.PaidHours.ToString("0.#")</td>
+                            <td>@if (t.IsActive) { <Badge Tone="success">Active</Badge> } else { <Badge>Inactive</Badge> }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </ChildContent>
+    </Card>
+}
+else if (Tab == "users")
+{
+    @if (!isOwner)
+    {
+        <EmptyState Icon="shield" Title="Owner only" Message="Only the store owner can manage logins." />
+    }
+    else
+    {
+        <Card Title="Logins" Subtitle="Staff logins linked to an employee see their own shifts under My shifts." Flush="true">
+            <Actions><button type="button" class="btn btn-primary btn-sm" @onclick="() => { userForm = new SaveUser.Form(); newPassword = null; }"><Icon Name="plus" Size="16" /> Add user</button></Actions>
+            <ChildContent>
+                <table class="table hover">
+                    <thead><tr><th>Name</th><th>User name</th><th>Role</th><th>Employee</th><th>Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var u in users)
+                        {
+                            <tr class="@(u.IsActive ? "" : "inactive")" @onclick="() => EditUser(u)">
+                                <td><div class="person-cell"><Avatar Name="@u.DisplayName" Size="sm" /> <span class="strong">@u.DisplayName</span></div></td>
+                                <td class="mono">@u.UserName</td>
+                                <td><Badge Tone="@(u.Role == Roles.Owner ? "brand" : u.Role == Roles.Manager ? "info" : "neutral")">@u.Role</Badge></td>
+                                <td>@(u.EmployeeName ?? "—")</td>
+                                <td>@if (u.IsActive) { <Badge Tone="success">Active</Badge> } else { <Badge>Disabled</Badge> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </ChildContent>
+        </Card>
+    }
+}
+else if (Tab == "audit")
+{
+    <div class="toolbar">
+        <div class="search-box">
+            <Icon Name="search" Size="16" />
+            <input type="search" class="input" placeholder="Search user, action or details" @bind="auditSearch" @bind:after="LoadAuditAsync" />
+        </div>
+        <select class="input select" @bind="auditEntity" @bind:after="LoadAuditAsync">
+            <option value="">All areas</option>
+            @foreach (var e in new[] { "Schedule", "Attendance", "Employee", "Sales", "Settings", "User" }) { <option value="@e">@e</option> }
+        </select>
+        <span class="toolbar-spacer"></span>
+        <a class="btn btn-sm" href="reports?type=audit">Audit report</a>
+    </div>
+    <Card Flush="true">
+        @if (audit.Count == 0)
+        {
+            <EmptyState Icon="history" Title="No changes recorded" />
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table compact">
+                    <thead><tr><th>When</th><th>User</th><th>Action</th><th>Area</th><th>Details</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in audit)
+                        {
+                            <tr>
+                                <td class="nowrap">@a.At.ToLocalTime().ToString("MMM d, h:mm tt")</td>
+                                <td>@a.UserName</td>
+                                <td>@a.Action</td>
+                                <td><Badge>@a.Entity</Badge></td>
+                                <td>@a.Details</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="muted small pad">Latest 300 entries.</div>
+        }
+    </Card>
+}
+else if (Tab == "demo")
+{
+    <Card Title="Demo data" Subtitle="Sample employees, 8 weeks of schedules, attendance and hourly sales — for trying the app only.">
+        @if (hasDemo)
+        {
+            <div class="message-bar warning"><Icon Name="alert" Size="16" /> Demo data is loaded. Dashboards and reports include sample numbers until you remove it.</div>
+            <p>Removing deletes only rows marked as demo. Anything you added yourself is kept — unless it belongs to a demo employee (their shifts and attendance go too).</p>
+            <button type="button" class="btn btn-danger" disabled="@busy" @onclick="() => askRemoveDemo = true"><Icon Name="trash" Size="16" /> Remove demo data</button>
+        }
+        else
+        {
+            <p>Loads 14 sample employees across your stations, schedules from 8 weeks ago to next week, matching attendance (with some lateness, absences and overtime) and hourly sales.</p>
+            <p class="muted">Every sample row is flagged, a banner warns while it exists, and one click removes it. Do not use demo results as actual results.</p>
+            <button type="button" class="btn btn-primary" disabled="@busy" @onclick="LoadDemoAsync"><Icon Name="database" Size="16" /> @(busy ? "Loading…" : "Load demo data")</button>
+        }
+    </Card>
+}
+
+@* ---------- Station panel ---------- *@
+<SidePanel Open="station is not null" Title="@(station?.Id == 0 ? "Add station" : "Edit station")" OnClose="() => station = null">
+    <ChildContent>
+        @if (station is not null)
+        {
+            <div class="form-stack">
+                <div class="form-row">
+                    <label class="field grow"><span class="field-label">Name</span><input class="input" @bind="station.Name" /></label>
+                    <label class="field"><span class="field-label">Color</span><input type="color" class="input color" @bind="station.Color" /></label>
+                </div>
+                <div class="field">
+                    <span class="field-label">Workload driver</span>
+                    <div class="segmented full">
+                        <button type="button" class="@(station.Driver == "Fixed" ? "active" : "")" @onclick='() => station.Driver = "Fixed"'>Fixed</button>
+                        <button type="button" class="@(station.Driver == "Transactions" ? "active" : "")" @onclick='() => station.Driver = "Transactions"'>Transactions</button>
+                    </div>
+                    <span class="field-help">@(station.IsTransactionDriven ? "Needed people = MAX(minimum, CEILING(transactions ÷ target))." : "Needed people = minimum headcount, every day (e.g. bakers).")</span>
+                </div>
+                @if (station.IsTransactionDriven)
+                {
+                    <label class="field"><span class="field-label">Target transactions per person per day</span><input type="number" min="1" class="input" @bind="station.TargetTxPerPerson" /></label>
+                }
+                <label class="field"><span class="field-label">Minimum headcount</span><input type="number" min="0" class="input" @bind="station.MinHeadcount" /></label>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-primary" @onclick="SaveStationAsync">Save</button>
+        @if (station?.Id > 0)
+        {
+            <button type="button" class="btn btn-danger-subtle" @onclick="DeleteStationAsync"><Icon Name="trash" Size="16" /> Delete</button>
+        }
+        <button type="button" class="btn" @onclick="() => station = null">Cancel</button>
+    </Footer>
+</SidePanel>
+
+@* ---------- Shift template panel ---------- *@
+<SidePanel Open="template is not null" Title="@(template?.Id == 0 ? "Add shift template" : "Edit shift template")" OnClose="() => template = null">
+    <ChildContent>
+        @if (template is not null)
+        {
+            <div class="form-stack">
+                <div class="form-row">
+                    <label class="field"><span class="field-label">Code</span><input class="input" maxlength="8" @bind="template.Code" placeholder="MID" /></label>
+                    <label class="field grow"><span class="field-label">Name</span><input class="input" @bind="template.Name" placeholder="Mid Shift" /></label>
+                    <label class="field"><span class="field-label">Color</span><input type="color" class="input color" @bind="template.Color" /></label>
+                </div>
+                <div class="form-row">
+                    <label class="field grow"><span class="field-label">Start</span><input type="time" class="input" value="@TimeOnly.FromTimeSpan(template.StartTime).ToString("HH:mm")" @onchange="e => template.StartTime = ParseTime(e, template.StartTime)" /></label>
+                    <label class="field grow"><span class="field-label">End</span><input type="time" class="input" value="@TimeOnly.FromTimeSpan(template.EndTime).ToString("HH:mm")" @onchange="e => template.EndTime = ParseTime(e, template.EndTime)" /></label>
+                    <label class="field"><span class="field-label">Break (min)</span><input type="number" min="0" max="240" step="15" class="input" @bind="template.BreakMinutes" /></label>
+                </div>
+                <div class="muted small">@template.PaidHours.ToString("0.#") paid hours. Shifts may cross midnight.</div>
+                <label class="check"><input type="checkbox" @bind="template.IsActive" /> Active (shown in the schedule palette)</label>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-primary" @onclick="SaveTemplateAsync">Save</button>
+        <button type="button" class="btn" @onclick="() => template = null">Cancel</button>
+    </Footer>
+</SidePanel>
+
+@* ---------- User panel ---------- *@
+<SidePanel Open="userForm is not null" Title="@(userForm?.Id is null ? "Add user" : "Edit user")" OnClose="() => userForm = null">
+    <ChildContent>
+        @if (userForm is not null)
+        {
+            <EditForm Model="userForm" OnValidSubmit="SaveUserAsync" id="user-form" class="form-stack">
+                <DataAnnotationsValidator />
+                <label class="field">
+                    <span class="field-label">Display name</span>
+                    <InputText @bind-Value="userForm.DisplayName" class="input" />
+                    <ValidationMessage For="() => userForm.DisplayName" class="field-error" />
+                </label>
+                <label class="field">
+                    <span class="field-label">User name (for signing in)</span>
+                    <InputText @bind-Value="userForm.UserName" class="input" autocomplete="off" />
+                    <ValidationMessage For="() => userForm.UserName" class="field-error" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Role</span>
+                    <InputSelect @bind-Value="userForm.Role" class="input select">
+                        @foreach (var r in Roles.All) { <option value="@r">@r</option> }
+                    </InputSelect>
+                    <span class="field-help">@RoleHelp(userForm.Role)</span>
+                </label>
+                <label class="field">
+                    <span class="field-label">Linked employee</span>
+                    <InputSelect @bind-Value="userForm.EmployeeId" class="input select">
+                        <option value="">None</option>
+                        @foreach (var e in employees) { <option value="@e.Id">@e.FullName (@e.EmployeeCode)</option> }
+                    </InputSelect>
+                    <span class="field-help">Needed for Staff to see their own shifts.</span>
+                </label>
+                @if (userForm.Id is null)
+                {
+                    <label class="field">
+                        <span class="field-label">Password</span>
+                        <InputText @bind-Value="userForm.Password" type="password" class="input" autocomplete="new-password" />
+                        <span class="field-help">At least 8 characters with letters and numbers.</span>
+                    </label>
+                }
+                else
+                {
+                    <label class="check"><InputCheckbox @bind-Value="userForm.IsActive" /> Can sign in</label>
+                    <div class="field">
+                        <span class="field-label">Reset password</span>
+                        <div class="form-row">
+                            <input type="password" class="input grow" @bind="newPassword" autocomplete="new-password" placeholder="New password" />
+                            <button type="button" class="btn" @onclick="ResetPasswordAsync" disabled="@string.IsNullOrEmpty(newPassword)">Set</button>
+                        </div>
+                    </div>
+                }
+            </EditForm>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="submit" form="user-form" class="btn btn-primary">Save</button>
+        <button type="button" class="btn" @onclick="() => userForm = null">Cancel</button>
+    </Footer>
+</SidePanel>
+
+<ConfirmDialog Open="askRemoveDemo" Title="Remove demo data?" Danger="true" ConfirmText="Remove"
+               Message="All sample employees, their schedules and attendance, and sample sales will be deleted. This cannot be undone."
+               OnCancel="() => askRemoveDemo = false" OnConfirm="RemoveDemoAsync" />
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
+
+    private static readonly (string Key, string Label)[] Tabs =
+    [
+        ("store", "Store"), ("stations", "Stations & targets"), ("shifts", "Shift templates"),
+        ("users", "Users"), ("audit", "Audit log"), ("demo", "Demo data")
+    ];
+
+    private string Tab => Tabs.Any(t => t.Key == TabParam) ? TabParam! : "store";
+
+    private StoreSetup? setup;
+    private SaveStore.Form? storeForm;
+    private Station? station;
+    private ShiftTemplate? template;
+    private List<UserRow> users = [];
+    private List<EmployeeRecord> employees = [];
+    private SaveUser.Form? userForm;
+    private string? newPassword;
+    private List<GetAuditLog.Entry> audit = [];
+    private string? auditSearch;
+    private string? auditEntity;
+    private bool hasDemo;
+    private bool isOwner;
+    private bool busy;
+    private bool askRemoveDemo;
+
+    protected override async Task OnInitializedAsync() => isOwner = await User.IsInAnyRoleAsync(Roles.Owner);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadSetupAsync();
+        if (Tab == "users" && isOwner)
+        {
+            users = await UsersHandler.HandleAsync();
+            employees = await EmployeesHandler.HandleAsync(new GetEmployees.Filter());
+        }
+        if (Tab == "audit") await LoadAuditAsync();
+        if (Tab == "demo") hasDemo = await DemoStatus.HandleAsync();
+    }
+
+    private async Task LoadSetupAsync()
+    {
+        setup = await Config.LoadAsync();
+        storeForm = SaveStore.Form.From(setup.Store);
+    }
+
+    private async Task LoadAuditAsync() => audit = await AuditHandler.HandleAsync(auditSearch, auditEntity);
+
+    private async Task Run(Func<Task<Result>> action, string success, Action onSuccess)
+    {
+        var result = await action();
+        if (!result.Ok)
+        {
+            Toasts.Error(result.Error!);
+            return;
+        }
+        Toasts.Success(success);
+        onSuccess();
+        await LoadSetupAsync();
+    }
+
+    private Task SaveStoreAsync() => Run(() => StoreHandler.HandleAsync(storeForm!), "Store settings saved", () => { });
+
+    private Task SaveStationAsync() => Run(() => StationHandler.HandleAsync(station!), $"{station!.Name} saved", () => station = null);
+
+    private Task DeleteStationAsync() => Run(() => DeleteStationHandler.HandleAsync(station!), $"{station!.Name} deleted", () => station = null);
+
+    private Task SaveTemplateAsync() => Run(() => TemplateHandler.HandleAsync(template!), $"{template!.Code} saved", () => template = null);
+
+    private void EditUser(UserRow u)
+    {
+        newPassword = null;
+        userForm = new SaveUser.Form
+        {
+            Id = u.Id, UserName = u.UserName, DisplayName = u.DisplayName, Role = u.Role, EmployeeId = u.EmployeeId, IsActive = u.IsActive
+        };
+    }
+
+    private async Task SaveUserAsync()
+    {
+        var result = await SaveUserHandler.HandleAsync(userForm!);
+        if (!result.Ok)
+        {
+            Toasts.Error(result.Error!);
+            return;
+        }
+        Toasts.Success($"{userForm!.UserName} saved");
+        userForm = null;
+        users = await UsersHandler.HandleAsync();
+    }
+
+    private async Task ResetPasswordAsync()
+    {
+        if (userForm?.Id is null || newPassword is null) return;
+        var result = await ResetHandler.HandleAsync(userForm.Id.Value, newPassword);
+        if (result.Ok)
+        {
+            Toasts.Success("Password changed");
+            newPassword = null;
+        }
+        else Toasts.Error(result.Error!);
+    }
+
+    private async Task LoadDemoAsync()
+    {
+        busy = true;
+        var result = await LoadDemo.HandleAsync();
+        busy = false;
+        if (!result.Ok)
+        {
+            Toasts.Error(result.Error!);
+            return;
+        }
+        // Full reload so the demo banner and the alerts bell update everywhere
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+
+    private async Task RemoveDemoAsync()
+    {
+        askRemoveDemo = false;
+        busy = true;
+        await RemoveDemo.HandleAsync();
+        busy = false;
+        Nav.NavigateTo("settings?tab=demo", forceLoad: true);
+    }
+
+    private static Station Clone(Station s) => new()
+    {
+        Id = s.Id, Name = s.Name, Color = s.Color, Driver = s.Driver, TargetTxPerPerson = s.TargetTxPerPerson,
+        MinHeadcount = s.MinHeadcount, SortOrder = s.SortOrder
+    };
+
+    private static ShiftTemplate Clone(ShiftTemplate t) => new()
+    {
+        Id = t.Id, Code = t.Code, Name = t.Name, StartTime = t.StartTime, EndTime = t.EndTime,
+        BreakMinutes = t.BreakMinutes, Color = t.Color, SortOrder = t.SortOrder, IsActive = t.IsActive
+    };
+
+    private static TimeSpan ParseTime(ChangeEventArgs e, TimeSpan fallback) =>
+        TimeOnly.TryParse(e.Value?.ToString(), out var t) ? t.ToTimeSpan() : fallback;
+
+    private static string RoleHelp(string role) => role switch
+    {
+        Roles.Owner => "Everything, including logins and store settings.",
+        Roles.Manager => "Employees, schedule, attendance, sales, analytics, reports, settings (not logins).",
+        Roles.Supervisor => "Views the schedule, records attendance. Cannot publish or change settings.",
+        _ => "Sees only their own shifts (link an employee)."
+    };
+}

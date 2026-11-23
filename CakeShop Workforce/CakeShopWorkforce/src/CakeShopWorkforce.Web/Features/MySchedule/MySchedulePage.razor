@@ -1,0 +1,103 @@
+@page "/my-schedule"
+@using CakeShopWorkforce.Web.Features.Analytics
+@inject GetMySchedule.Handler Handler
+@inject CurrentUser User
+@inject Clock Clock
+
+<PageHeader Title="My shifts" Icon="person" Subtitle="Your schedule for the next two weeks and your recent attendance." />
+
+@if (loading)
+{
+    <Loading Rows="6" />
+}
+else if (result is null)
+{
+    <EmptyState Icon="person" Title="Your login is not linked to an employee"
+                Message="Ask the store owner to link your login to your employee record in Settings → Users." />
+}
+else
+{
+    <div class="kpi-grid small">
+        <KpiCard Label="Next shift" Icon="calendar" Value="@NextShiftText()" Sub="@NextShiftSub()" />
+        <KpiCard Label="Hours in the next 14 days" Icon="clock" Value="@result.UpcomingHours.ToString("0.#")" Sub="@($"Max {result.Employee.MaxHoursPerWeek} h per week")" />
+        <KpiCard Label="Station" Icon="people" Value="@(result.Setup.FindStation(result.Employee.StationId)?.Name ?? "—")" Sub="@result.Employee.Position" />
+    </div>
+
+    <div class="grid-2">
+        <Card Title="Upcoming" Flush="true">
+            <ul class="my-days">
+                @foreach (var (date, plan, published) in result.Upcoming)
+                {
+                    var template = result.Setup.FindTemplate(plan?.ShiftTemplateId);
+                    var station = result.Setup.FindStation(plan?.StationId);
+                    <li class="@(date == Clock.Today ? "today" : "")">
+                        <div class="my-date">
+                            <span>@Dates.DayCode(date)</span>
+                            <strong>@date.Day</strong>
+                        </div>
+                        <div class="my-main">
+                            @if (plan is null) { <span class="muted">Not scheduled yet</span> }
+                            else if (plan.AssignmentType == "RestDay") { <span class="shift-chip rest">Rest day</span> }
+                            else if (plan.AssignmentType == "Leave") { <span class="shift-chip leave">@(plan.LeaveType ?? "Leave")</span> }
+                            else
+                            {
+                                <span class="shift-chip" style="--c:@(template?.Color ?? "#616161")"><strong>@(template?.Code ?? "Shift")</strong> @Format.Time(plan.StartTime) – @Format.Time(plan.EndTime)</span>
+                                @if (station is not null) { <span class="muted small"> · <span class="station-dot" style="background:@station.Color"></span>@station.Name</span> }
+                            }
+                        </div>
+                        @if (plan is not null && !published) { <Badge Tone="warning" Title="The manager has not published this week yet">Not final</Badge> }
+                    </li>
+                }
+            </ul>
+        </Card>
+
+        <Card Title="Recent attendance" Flush="true">
+            @if (result.Recent.Count == 0)
+            {
+                <EmptyState Icon="clock" Title="No records in the last 14 days" />
+            }
+            else
+            {
+                <table class="table compact">
+                    <thead><tr><th>Date</th><th>In</th><th>Out</th><th class="num">Hours</th><th>Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in result.Recent)
+                        {
+                            <tr>
+                                <td>@Format.Date((e.Assignment?.BusinessDate ?? e.Attendance?.BusinessDate) ?? Clock.Today)</td>
+                                <td>@Format.Time(e.Attendance?.TimeIn)</td>
+                                <td>@Format.Time(e.Attendance?.TimeOut)</td>
+                                <td class="num">@(e.Result.WorkedHours > 0 ? e.Result.WorkedHours.ToString("0.#") : "—")</td>
+                                <td><Badge Tone="@AttendanceMath.Tone(e.Result.Status)">@AttendanceMath.Label(e.Result.Status)</Badge></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </Card>
+    </div>
+}
+
+@code {
+    private GetMySchedule.Result? result;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var employeeId = (await User.GetAsync()).EmployeeId();
+        if (employeeId is not null) result = await Handler.HandleAsync(employeeId.Value);
+        loading = false;
+    }
+
+    private (DateTime Date, AssignmentRow Plan)? NextShift()
+    {
+        var next = result?.Upcoming.FirstOrDefault(u => u.Plan is { IsShift: true } p && (u.Date > Clock.Today || p.EndTime > Clock.Now.TimeOfDay));
+        return next?.Plan is null ? null : (next.Value.Date, next.Value.Plan);
+    }
+
+    private string NextShiftText() => NextShift() is { } n
+        ? (n.Date == Clock.Today ? "Today" : n.Date == Clock.Today.AddDays(1) ? "Tomorrow" : Format.Date(n.Date))
+        : "—";
+
+    private string? NextShiftSub() => NextShift() is { } n ? Format.TimeRange(n.Plan.StartTime, n.Plan.EndTime) : "Nothing scheduled";
+}

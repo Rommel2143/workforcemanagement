@@ -1,0 +1,225 @@
+@page "/"
+@using CakeShopWorkforce.Web.Features.Analytics
+@inject GetDashboard.Handler Handler
+@inject CurrentUser User
+@inject NavigationManager Nav
+@inject Clock Clock
+
+<PageHeader Title="Dashboard" Icon="home" Subtitle="@greeting">
+    <PeriodPicker Value="period" ValueChanged="OnPeriodChanged" />
+</PageHeader>
+
+@if (result is null)
+{
+    <Loading Rows="8" />
+}
+else
+{
+    var s = result.Summary;
+    var single = result.Period.Days == 1;
+    var days = Math.Max(1, result.Period.Days);
+    // Days that have already started — "present per day" must not be diluted by future days
+    var elapsedDays = Math.Max(1, s.Days.Count(d => d.Date <= Clock.Today));
+    // Finished days with people at work but no sales (today is still in progress, so it doesn't count)
+    var missingSales = s.Days.Count(d => d.Date < Clock.Today && d.Present > 0 && !d.HasSales);
+
+    @if (s.MissingTimeOut > 0 || missingSales > 0)
+    {
+        <div class="message-bar warning">
+            <Icon Name="info" Size="16" />
+            <span>
+                <strong>Provisional:</strong>&nbsp;
+                @if (missingSales > 0) { <span>@missingSales finished day(s) have staff but no sales entered.</span> }
+                @if (s.MissingTimeOut > 0) { <span>&nbsp;@s.MissingTimeOut time-out(s) missing, so labor hours are understated.</span> }
+            </span>
+        </div>
+    }
+
+    <div class="kpi-grid">
+        <KpiCard Label="Transactions" Icon="receipt" Value="@Format.Number(s.Transactions)" Sub="@CompareTx()" Href="sales" />
+        <KpiCard Label="Sales" Icon="money" Value="@Format.MoneyShort(s.Sales)" Sub="@CompareSales()" Href="sales" />
+        <KpiCard Label="Avg transaction value" Icon="money" Value="@(s.AverageTransactionValue is null ? "—" : Format.Money(s.AverageTransactionValue.Value))" Hint="Sales ÷ transactions" />
+        <KpiCard Label="@(single ? "Scheduled" : "Scheduled / day")" Icon="calendar" Value="@PerDay(s.Scheduled, days, single)" Sub="@(single ? null : $"{s.Scheduled} person-days")" Href="schedule" />
+        <KpiCard Label="@(single ? "Present" : "Present / day")" Icon="people" Value="@PerDay(s.Present, elapsedDays, single)" Sub="@($"{s.Absent} absent · {s.Late} late · {s.OnLeave} on leave")" Href="attendance" />
+        <KpiCard Label="Attendance rate" Icon="check" Value="@Format.Percent(s.AttendanceRate)" Hint="Present ÷ (scheduled − not started yet). Rest days and leave are never absences."
+                 Tone="@(s.AttendanceRate is null ? "neutral" : s.AttendanceRate >= 95 ? "success" : s.AttendanceRate >= 85 ? "warning" : "danger")" />
+        <KpiCard Label="Transactions / personnel" Icon="people" Value="@Format.OrDash(s.TransactionsPerPersonnel)" Hint="Transactions ÷ personnel present (TPP)" />
+        <KpiCard Label="Sales / personnel" Icon="money" Value="@(s.SalesPerPersonnel is null ? "—" : Format.MoneyShort(s.SalesPerPersonnel.Value))" Hint="Sales ÷ personnel present (SPP)" />
+        <KpiCard Label="Transactions / labor hour" Icon="target" Value="@Format.OrDash(s.TransactionsPerLaborHour)" Hint="Transactions ÷ actual labor hours of all staff (TPLH) — the main productivity number. Compare days on the Analytics page." />
+        <KpiCard Label="Sales / labor hour" Icon="money" Value="@(s.SalesPerLaborHour is null ? "—" : Format.Money(s.SalesPerLaborHour.Value))" Hint="Sales ÷ actual labor hours (SPLH)" />
+        <KpiCard Label="Ideal manpower" Icon="target" Value="@(s.DaysWithSales == 0 ? "—" : PerDay(s.Ideal, Math.Max(1, s.DaysWithSales), single))"
+                 Sub="@(single && s.Days.Count == 1 && s.DaysWithSales == 1 ? $"Simple formula: {s.Days[0].Manpower.SimpleIdeal}" : null)"
+                 Hint="Station-aware: fixed stations at their minimum + Cashier/Sales by transactions" />
+        <KpiCard Label="Manpower gap" Icon="people" Value="@(s.DaysWithSales == 0 ? "—" : (s.Gap > 0 ? "+" : "") + s.Gap)" Sub="Present − ideal"
+                 Tone="@(s.DaysWithSales == 0 ? "neutral" : s.Gap < 0 ? "danger" : s.Gap == 0 ? "success" : "warning")" Href="analytics" />
+        <KpiCard Label="Utilization" Icon="chart" Value="@Format.Percent(s.Utilization)" Hint="Ideal ÷ present × 100" Href="analytics" />
+        <KpiCard Label="Staffing status" Icon="shield" Value="@ManpowerMath.Label(s.Status)" Tone="@ManpowerMath.Tone(s.Status)"
+                 Sub="@(single && s.Days.Count == 1 ? ManpowerMath.Advice(s.Days[0].Manpower) : $"{s.UnderstaffedDays} short · {s.OptimalDays} optimal · {s.OverstaffedDays} over")" Href="analytics" />
+    </div>
+
+    <div class="grid-main">
+        <div class="stack">
+            <div class="grid-2">
+                <Card Title="Transactions vs personnel" Subtitle="@ChartRange()">
+                    <ComboChart Labels="chartLabels"
+                                Bars="@([new ChartSeries("Transactions", ChartColors.Brand, result.ChartDays.Select(d => (double)d.Transactions).ToList())])"
+                                Line="@(new ChartSeries("Present", ChartColors.Orange, result.ChartDays.Select(d => (double)d.Present).ToList()))"
+                                SecondaryAxis="true" AriaLabel="Transactions vs personnel" />
+                </Card>
+                <Card Title="Scheduled vs actual personnel" Subtitle="@ChartRange()">
+                    <ComboChart Labels="chartLabels"
+                                Bars="@([new ChartSeries("Scheduled", ChartColors.BrandLight, result.ChartDays.Select(d => (double)d.Scheduled).ToList()),
+                                         new ChartSeries("Present", ChartColors.Brand, result.ChartDays.Select(d => (double)d.Present).ToList())])"
+                                AriaLabel="Scheduled vs actual" />
+                </Card>
+            </div>
+            <div class="grid-2">
+                <Card Title="Sales vs labor hours" Subtitle="@ChartRange()">
+                    <ComboChart Labels="chartLabels"
+                                Bars="@([new ChartSeries("Sales", ChartColors.Teal, result.ChartDays.Select(d => (double)d.Sales).ToList())])"
+                                Line="@(new ChartSeries("Labor hours", ChartColors.Red, result.ChartDays.Select(d => (double)d.LaborHours).ToList()))"
+                                SecondaryAxis="true" BarFormat="@(v => "₱" + (v >= 1000 ? (v / 1000).ToString("0.#") + "K" : v.ToString("0")))"
+                                LineFormatter="@(v => v.ToString("0"))" AriaLabel="Sales vs labor hours" />
+                </Card>
+                <Card Title="Peak hours" Subtitle="Average transactions (bars) and counter staff on duty (line) per hour">
+                    @if (result.PeakHours.Count == 0)
+                    {
+                        <EmptyState Icon="clock" Title="No hourly sales yet" Message="Hourly sales show which hours need more people." />
+                    }
+                    else
+                    {
+                        <ComboChart Labels="@result.PeakHours.Select(p => Format.HourLabel(p.Hour).Replace(" ", "")).ToList()"
+                                    Bars="@([new ChartSeries("Transactions", ChartColors.Brand, result.PeakHours.Select(p => p.Transactions).ToList())])"
+                                    Line="@(new ChartSeries("Counter staff", ChartColors.Orange, result.PeakHours.Select(p => p.Present).ToList()))"
+                                    SecondaryAxis="true" AriaLabel="Peak hours" />
+                    }
+                </Card>
+            </div>
+        </div>
+
+        <div class="stack">
+            <Card Title="Alerts" Flush="true">
+                <Actions><a class="btn btn-subtle btn-sm" href="alerts">See all</a></Actions>
+                <ChildContent>
+                    @if (result.Alerts.Count == 0)
+                    {
+                        <EmptyState Icon="check" Title="All clear" Message="No problems right now." />
+                    }
+                    else
+                    {
+                        <div class="alert-list compact">
+                            @foreach (var a in result.Alerts)
+                            {
+                                <a class="alert-item alert-@a.Severity" href="@(a.Link ?? "alerts")">
+                                    <span class="alert-icon"><Icon Name="@(a.Severity == "info" ? "info" : "alert")" Size="16" /></span>
+                                    <div class="alert-body">
+                                        <div class="alert-title">@a.Title</div>
+                                        <div class="alert-detail">@a.Detail</div>
+                                    </div>
+                                </a>
+                            }
+                        </div>
+                    }
+                </ChildContent>
+            </Card>
+
+            <Card Title="Today's team" Subtitle="@Format.DateLong(Clock.Today)" Flush="true">
+                <Actions><a class="btn btn-subtle btn-sm" href="attendance">Attendance</a></Actions>
+                <ChildContent>
+                    @{
+                        var team = result.Today?.Employees.Where(e => e.Assignment?.AssignmentType == "Shift" || e.Result.IsPresent).ToList() ?? [];
+                    }
+                    @if (team.Count == 0)
+                    {
+                        <EmptyState Icon="people" Title="Nobody scheduled today" Message="Build the schedule to see who is working.">
+                            <a class="btn btn-primary btn-sm" href="schedule">Open schedule</a>
+                        </EmptyState>
+                    }
+                    else
+                    {
+                        <ul class="people-list">
+                            @foreach (var e in team)
+                            {
+                                var station = result.Setup.FindStation(e.StationId);
+                                <li>
+                                    <Avatar Name="@e.Employee.FullName" />
+                                    <div class="people-main">
+                                        <div class="strong">@e.Employee.FullName</div>
+                                        <div class="muted small">
+                                            @if (e.Assignment is { IsShift: true } a) { @Format.TimeRange(a.StartTime, a.EndTime) }
+                                            @if (station is not null) { <text> · </text><span class="station-dot" style="background:@station.Color"></span>@station.Name }
+                                        </div>
+                                    </div>
+                                    <Badge Tone="@AttendanceMath.Tone(e.Result.Status)">@AttendanceMath.Label(e.Result.Status)</Badge>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </ChildContent>
+            </Card>
+        </div>
+    </div>
+}
+
+@code {
+    private Period period = Period.Day(DateTime.Today);
+    private GetDashboard.Result? result;
+    private List<string> chartLabels = [];
+    private string greeting = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Staff only see their own shifts
+        if (!await User.IsInAnyRoleAsync(Roles.Owner, Roles.Manager, Roles.Supervisor))
+        {
+            Nav.NavigateTo("my-schedule", replace: true);
+            return;
+        }
+
+        var name = (await User.GetAsync()).DisplayName();
+        var hour = Clock.Now.Hour;
+        greeting = $"Good {(hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening")}, {name.Split(' ')[0]}. Here is how the store is doing.";
+
+        period = Period.Day(Clock.Today);
+        await LoadAsync();
+    }
+
+    private async Task OnPeriodChanged(Period value)
+    {
+        period = value;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        result = null;
+        var loaded = await Handler.HandleAsync(period);
+        chartLabels = loaded.ChartDays.Select(d => loaded.ChartDays.Count > 8 ? d.Date.Day.ToString() : Dates.DayCode(d.Date)).ToList();
+        result = loaded;
+    }
+
+    private string ChartRange() => result is null || result.ChartDays.Count == 0 ? ""
+        : $"{result.ChartDays[0].Date:MMM d} – {result.ChartDays[^1].Date:MMM d}";
+
+    private static string PerDay(int total, int days, bool single) =>
+        single ? total.ToString() : (total / (decimal)days).ToString("0.#");
+
+    private string? CompareTx()
+    {
+        if (result?.SameWeekday is not { HasData: true } f || result.Summary.DaysWithSales == 0) return null;
+        return Compare(result.Summary.Transactions, f.Transactions, $"vs {f.Transactions:N0} avg {Dates.DayCode(result.Period.From)}");
+    }
+
+    private string? CompareSales()
+    {
+        if (result?.SameWeekday is not { HasData: true } f || result.Summary.DaysWithSales == 0) return null;
+        return Compare(result.Summary.Sales, f.Sales, $"vs {Format.MoneyShort(f.Sales)} avg {Dates.DayCode(result.Period.From)}");
+    }
+
+    private static string Compare(decimal actual, decimal baseline, string text)
+    {
+        if (baseline == 0) return text;
+        var change = (actual - baseline) * 100 / baseline;
+        return $"{(change >= 0 ? "▲" : "▼")} {Math.Abs(change):0}% {text}";
+    }
+}

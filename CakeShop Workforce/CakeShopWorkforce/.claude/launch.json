@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cakeshop",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/CakeShopWorkforce.Web", "--launch-profile", "http"],
+      "port": 5215
+    }
+  ]
+}

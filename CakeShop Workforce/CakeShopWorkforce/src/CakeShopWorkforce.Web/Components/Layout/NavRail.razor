@@ -1,0 +1,24 @@
+@* Left app bar, like Teams (Activity, Chat, Teams, Calendar...). Items are hidden when the role can't use them. *@
+
+<nav class="rail" aria-label="Main">
+    <AuthorizeView Roles="@Roles.Leaders">
+        <RailLink Href="" Icon="home" Text="Dashboard" Match="NavLinkMatch.All" />
+        <RailLink Href="schedule" Icon="calendar" Text="Schedule" />
+        <RailLink Href="attendance" Icon="clock" Text="Attendance" />
+        <RailLink Href="employees" Icon="people" Text="People" />
+        <RailLink Href="sales" Icon="receipt" Text="Sales" />
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@Roles.Managers">
+        <RailLink Href="analytics" Icon="chart" Text="Analytics" />
+        <RailLink Href="reports" Icon="document" Text="Reports" />
+    </AuthorizeView>
+
+    <RailLink Href="my-schedule" Icon="person" Text="My shifts" />
+
+    <div class="rail-spacer"></div>
+
+    <AuthorizeView Roles="@Roles.Managers">
+        <RailLink Href="settings" Icon="settings" Text="Settings" />
+    </AuthorizeView>
+</nav>

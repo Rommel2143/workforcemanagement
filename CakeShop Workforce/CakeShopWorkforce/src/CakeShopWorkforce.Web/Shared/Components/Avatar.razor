@@ -1,0 +1,30 @@
+@* Round initials bubble, like Teams. The color is picked from the name so the same person always gets the same color. *@
+
+<span class="avatar @SizeClass" style="background:@Background; color:@Foreground" title="@Name">@Format.Initials(Name)</span>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public string Size { get; set; } = "md";   // sm, md, lg
+
+    private static readonly (string Bg, string Fg)[] Palette =
+    [
+        ("#E8EBFA", "#4F52B2"), ("#FDE7E9", "#A4262C"), ("#DFF6DD", "#0E700E"), ("#FFF4CE", "#8A5800"),
+        ("#E0F2FF", "#0F548C"), ("#F1E5FA", "#6B3F9E"), ("#FCE9DE", "#A0390B"), ("#E6F4F1", "#00666D")
+    ];
+
+    private string SizeClass => "avatar-" + Size;
+    private (string Bg, string Fg) Colors => Palette[Math.Abs(StableHash(Name)) % Palette.Length];
+    private string Background => Colors.Bg;
+    private string Foreground => Colors.Fg;
+
+    // string.GetHashCode() changes every run, so use our own small hash
+    private static int StableHash(string text)
+    {
+        unchecked
+        {
+            var hash = 17;
+            foreach (var ch in text) hash = hash * 31 + ch;
+            return hash == int.MinValue ? 0 : hash;
+        }
+    }
+}

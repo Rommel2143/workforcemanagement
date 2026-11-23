@@ -1,0 +1,12 @@
+@* Seven small letters M T W T F S S — filled when the day is in the list ("Mon,Tue,..."). *@
+
+<span class="day-dots" title="@Days">
+    @foreach (var day in Dates.DayCodes)
+    {
+        <span class="@(Days.Contains(day) ? "on" : "")">@day[0]</span>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Days { get; set; } = "";
+}

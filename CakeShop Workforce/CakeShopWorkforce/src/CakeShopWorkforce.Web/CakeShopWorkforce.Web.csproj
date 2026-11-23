@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CakeShopWorkforce.Web</RootNamespace>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Dapper: tiny library that turns SQL results into C# objects -->
+    <PackageReference Include="Dapper" Version="2.1.66" />
+    <!-- Npgsql: the PostgreSQL driver for .NET -->
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+    <!-- ClosedXML: creates Excel (.xlsx) files for the Reports page -->
+    <PackageReference Include="ClosedXML" Version="0.104.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The SQL scripts are packed INSIDE the app so it can create the database on first run -->
+    <EmbeddedResource Include="Database\Scripts\*.sql" />
+  </ItemGroup>
+
+</Project>

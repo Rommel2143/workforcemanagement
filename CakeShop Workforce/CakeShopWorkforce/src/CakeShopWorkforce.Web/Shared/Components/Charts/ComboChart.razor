@@ -1,0 +1,156 @@
+@using System.Globalization
+@*
+    Bar + line chart drawn with plain SVG (no JavaScript library).
+
+    • Bars: one or more series, drawn side by side for each label.
+    • Line: optional, can use its own scale on the right (SecondaryAxis="true").
+    • Hover a column to see all values (tooltip + highlight).
+
+    Example:
+      <ComboChart Labels="days"
+                  Bars="[new ChartSeries("Transactions", ChartColors.Brand, txValues)]"
+                  Line="@(new ChartSeries("Personnel", ChartColors.Orange, staffValues))"
+                  SecondaryAxis="true" />
+*@
+
+@if (Labels.Count == 0)
+{
+    <EmptyState Icon="chart" Title="No data for this period" />
+}
+else
+{
+    <div class="chart">
+        <div class="chart-legend">
+            @foreach (var s in Bars)
+            {
+                <span><i style="background:@s.Color"></i>@s.Name</span>
+            }
+            @if (Line is not null)
+            {
+                <span><i class="line" style="background:@Line.Color"></i>@Line.Name@(SecondaryAxis ? " (right axis)" : "")</span>
+            }
+        </div>
+
+        <svg viewBox="0 0 @W @Height" class="chart-svg" role="img" aria-label="@AriaLabel">
+            @* horizontal grid lines + left axis labels *@
+            @for (var i = 0; i <= 4; i++)
+            {
+                var y = Top + PlotH - PlotH * i / 4.0;
+                @* <g> wrappers: Razor treats a bare <text> as its own tag, so SVG text must sit inside an element *@
+                <g>
+                    <line x1="@N(Left)" x2="@N(W - Right)" y1="@N(y)" y2="@N(y)" class="grid" />
+                    <text x="@N(Left - 8)" y="@N(y + 4)" class="axis" text-anchor="end">@BarFormat(BarMax * i / 4.0)</text>
+                    @if (Line is not null && SecondaryAxis)
+                    {
+                        <g><text x="@N(W - Right + 8)" y="@N(y + 4)" class="axis">@LineFormat(LineMax * i / 4.0)</text></g>
+                    }
+                </g>
+            }
+
+            @for (var i = 0; i < Labels.Count; i++)
+            {
+                var index = i;
+                var bandX = Left + Band * i;
+
+                <g class="chart-col @(hovered == index ? "hover" : "")" @onmouseenter="() => hovered = index" @onmouseleave="() => hovered = null">
+                    <rect x="@N(bandX)" y="@N(Top)" width="@N(Band)" height="@N(PlotH)" class="hit" />
+                    @for (var s = 0; s < Bars.Count; s++)
+                    {
+                        var value = ValueAt(Bars[s], index);
+                        var h = BarMax == 0 ? 0 : PlotH * value / BarMax;
+                        var x = bandX + Band * 0.15 + BarW * s;
+                        <rect x="@N(x)" y="@N(Top + PlotH - h)" width="@N(Math.Max(1, BarW - 2))" height="@N(h)" rx="2" fill="@Bars[s].Color" />
+                    }
+                    @if (ShowLabel(index))
+                    {
+                        <g><text x="@N(bandX + Band / 2)" y="@N(Height - 10)" class="axis" text-anchor="middle">@Labels[index]</text></g>
+                    }
+                    <title>@TooltipText(index)</title>
+                </g>
+            }
+
+            @if (Line is not null)
+            {
+                <polyline points="@LinePoints()" fill="none" stroke="@Line.Color" stroke-width="2.5" stroke-linejoin="round" />
+                @for (var i = 0; i < Labels.Count; i++)
+                {
+                    <circle cx="@N(Left + Band * i + Band / 2)" cy="@N(LineY(ValueAt(Line, i)))" r="@(hovered == i ? 5 : 3.2)" fill="#fff" stroke="@Line.Color" stroke-width="2" />
+                }
+            }
+        </svg>
+
+        @if (hovered is int hi && hi < Labels.Count)
+        {
+            <div class="chart-readout">
+                <strong>@Labels[hi]</strong>
+                @foreach (var s in Bars)
+                {
+                    <span><i style="background:@s.Color"></i>@s.Name: @BarFormat(ValueAt(s, hi))</span>
+                }
+                @if (Line is not null)
+                {
+                    <span><i style="background:@Line.Color"></i>@Line.Name: @LineFormat(ValueAt(Line, hi))</span>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<string> Labels { get; set; } = [];
+    [Parameter] public IReadOnlyList<ChartSeries> Bars { get; set; } = [];
+    [Parameter] public ChartSeries? Line { get; set; }
+    [Parameter] public bool SecondaryAxis { get; set; }
+    [Parameter] public int Height { get; set; } = 260;
+    [Parameter] public Func<double, string> BarFormat { get; set; } = DefaultFormat;
+    [Parameter] public Func<double, string>? LineFormatter { get; set; }
+    [Parameter] public string AriaLabel { get; set; } = "Chart";
+
+    private int? hovered;
+
+    private const double W = 760, Left = 52, Right = 52, Top = 12, Bottom = 30;
+    private double PlotW => W - Left - Right;
+    private double PlotH => Height - Top - Bottom;
+    private double Band => PlotW / Math.Max(1, Labels.Count);
+    private double BarW => Band * 0.7 / Math.Max(1, Bars.Count);
+
+    private Func<double, string> LineFormat => LineFormatter ?? BarFormat;
+
+    private double BarMax => NiceMax(Math.Max(
+        Bars.SelectMany(b => b.Values).DefaultIfEmpty(0).Max(),
+        Line is not null && !SecondaryAxis ? Line.Values.DefaultIfEmpty(0).Max() : 0));
+
+    private double LineMax => SecondaryAxis && Line is not null ? NiceMax(Line.Values.DefaultIfEmpty(0).Max()) : BarMax;
+
+    private double LineY(double value) => Top + PlotH - (LineMax == 0 ? 0 : PlotH * value / LineMax);
+
+    private string LinePoints() => string.Join(' ',
+        Enumerable.Range(0, Labels.Count).Select(i => $"{N(Left + Band * i + Band / 2)},{N(LineY(ValueAt(Line!, i)))}"));
+
+    private static double ValueAt(ChartSeries s, int i) => i < s.Values.Count ? s.Values[i] : 0;
+
+    // Show every label when there are few, otherwise every 2nd / 3rd... so they don't overlap
+    private bool ShowLabel(int i) => i % Math.Max(1, (int)Math.Ceiling(Labels.Count / 14.0)) == 0;
+
+    private string TooltipText(int i)
+    {
+        var parts = Bars.Select(s => $"{s.Name}: {BarFormat(ValueAt(s, i))}").ToList();
+        if (Line is not null) parts.Add($"{Line.Name}: {LineFormat(ValueAt(Line, i))}");
+        return Labels[i] + "\n" + string.Join("\n", parts);
+    }
+
+    /// <summary>Rounds the top of the axis up to a friendly number (1, 2, 2.5, 5, 10 × power of ten).</summary>
+    private static double NiceMax(double max)
+    {
+        if (max <= 0) return 1;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(max)));
+        foreach (var step in new[] { 1, 2, 2.5, 5, 10 })
+            if (step * magnitude >= max) return step * magnitude;
+        return 10 * magnitude;
+    }
+
+    private static string DefaultFormat(double v) => v >= 1000 ? (v / 1000).ToString("0.#", CultureInfo.InvariantCulture) + "K" : v.ToString("0.#", CultureInfo.InvariantCulture);
+
+    // SVG needs "." decimals no matter the computer's language settings
+    private static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+}

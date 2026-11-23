@@ -1,0 +1,12 @@
+@* Grey shimmer bars shown while data loads. *@
+
+<div class="loading" aria-busy="true" aria-label="Loading">
+    @for (var i = 0; i < Rows; i++)
+    {
+        <div class="shimmer" style="width:@(100 - (i % 3) * 12)%"></div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Rows { get; set; } = 4;
+}

@@ -1,0 +1,67 @@
+@page "/alerts"
+@attribute [Authorize(Roles = Roles.Leaders)]
+@inject GetAlerts.Handler Handler
+@inject Clock Clock
+
+<PageHeader Title="Alerts" Icon="bell" Subtitle="Worked out live from the schedule, attendance and sales. Fix the cause and the alert goes away.">
+    <button type="button" class="btn" @onclick="LoadAsync"><Icon Name="refresh" Size="16" /> Refresh</button>
+</PageHeader>
+
+@if (alerts is null)
+{
+    <Loading Rows="5" />
+}
+else if (alerts.Count == 0)
+{
+    <EmptyState Icon="check" Title="All clear" Message="No staffing, attendance or schedule problems right now." />
+}
+else
+{
+    <div class="chip-row">
+        @foreach (var tone in new[] { "danger", "warning", "info" })
+        {
+            var count = alerts.Count(a => a.Severity == tone);
+            <button type="button" class="chip @(filter == tone ? "active" : "")" @onclick="() => filter = filter == tone ? null : tone">
+                <Badge Tone="@tone" Dot="true">@ToneLabel(tone)</Badge> @count
+            </button>
+        }
+    </div>
+
+    <div class="alert-list">
+        @foreach (var alert in alerts.Where(a => filter is null || a.Severity == filter))
+        {
+            <div class="alert-item alert-@alert.Severity">
+                <span class="alert-icon"><Icon Name="@(alert.Severity == "info" ? "info" : "alert")" Size="18" /></span>
+                <div class="alert-body">
+                    <div class="alert-title">@alert.Title</div>
+                    <div class="alert-detail">@alert.Detail</div>
+                    <div class="alert-meta">@alert.Code · @alert.Category</div>
+                </div>
+                @if (alert.Link is not null)
+                {
+                    <a class="btn btn-sm" href="@alert.Link">Open <Icon Name="chevron-right" Size="14" /></a>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<AlertItem>? alerts;
+    private string? filter;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        alerts = null;
+        alerts = await Handler.HandleAsync(Clock.Today);
+    }
+
+    private static string ToneLabel(string tone) => tone switch
+    {
+        "danger" => "High",
+        "warning" => "Medium",
+        _ => "Low"
+    };
+}

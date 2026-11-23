@@ -1,0 +1,158 @@
+@page "/reports"
+@attribute [Authorize(Roles = Roles.Managers)]
+@inject BuildReport.Handler Builder
+@inject IJSRuntime JS
+@inject Clock Clock
+
+<PageHeader Title="Reports" Icon="document" Subtitle="Preview on screen, download to Excel, or print / save as PDF.">
+    @if (definition is not null)
+    {
+        <a class="btn" href="@ExcelUrl" download><Icon Name="download" Size="16" /> Excel</a>
+        <button type="button" class="btn" @onclick="PrintAsync"><Icon Name="print" Size="16" /> Print / PDF</button>
+    }
+</PageHeader>
+
+<div class="reports-layout">
+    <nav class="report-list no-print" aria-label="Reports">
+        @foreach (var r in BuildReport.All)
+        {
+            <button type="button" class="report-link @(definition?.Key == r.Key ? "active" : "")" @onclick="() => SelectAsync(r)">
+                <Icon Name="@r.Icon" Size="18" />
+                <span>
+                    <span class="strong">@r.Title</span>
+                    <span class="muted small">@r.Description</span>
+                </span>
+            </button>
+        }
+    </nav>
+
+    <div class="report-main">
+        @if (definition is null)
+        {
+            <EmptyState Icon="document" Title="Choose a report" Message="Pick a report on the left to preview it." />
+        }
+        else
+        {
+            <div class="toolbar no-print">
+                <PeriodPicker Value="period" ValueChanged="OnPeriodChanged" />
+            </div>
+
+            @if (table is null)
+            {
+                <Loading Rows="8" />
+            }
+            else
+            {
+                <Card Class="report-card" Flush="true">
+                    <div class="report-head">
+                        <div>
+                            <h2 class="report-title">@table.Title</h2>
+                            <div class="muted">@table.Subtitle</div>
+                        </div>
+                        <div class="muted small print-only">Printed @Clock.Now.ToString("MMM d, yyyy h:mm tt") · CakeShop Workforce</div>
+                    </div>
+                    @if (table.Rows.Count == 0)
+                    {
+                        <EmptyState Icon="document" Title="No data in this period" Message="Try a different date range." />
+                    }
+                    else
+                    {
+                        <div class="table-wrap">
+                            <table class="table compact report-table">
+                                <thead>
+                                    <tr>
+                                        @foreach (var c in table.Columns)
+                                        {
+                                            <th class="@(c.Kind == ColumnKind.Text ? "" : "num")">@c.Name</th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in table.Rows.Take(MaxRows))
+                                    {
+                                        <tr>
+                                            @for (var i = 0; i < table.Columns.Count; i++)
+                                            {
+                                                var c = table.Columns[i];
+                                                <td class="@(c.Kind == ColumnKind.Text ? "" : "num")">@(i < row.Length ? ReportTable.Display(row[i], c.Kind) : "")</td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                                @if (table.Totals is not null)
+                                {
+                                    <tfoot>
+                                        <tr>
+                                            @for (var i = 0; i < table.Columns.Count; i++)
+                                            {
+                                                var c = table.Columns[i];
+                                                var v = i < table.Totals.Length ? table.Totals[i] : null;
+                                                <td class="@(c.Kind == ColumnKind.Text ? "" : "num")">@(v is null ? "" : ReportTable.Display(v, c.Kind))</td>
+                                            }
+                                        </tr>
+                                    </tfoot>
+                                }
+                            </table>
+                        </div>
+                        @if (table.Rows.Count > MaxRows)
+                        {
+                            <div class="muted small pad">Showing the first @MaxRows of @table.Rows.Count rows. The Excel file has everything.</div>
+                        }
+                    }
+                    @if (table.Notes.Count > 0)
+                    {
+                        <ul class="report-notes">
+                            @foreach (var n in table.Notes) { <li>@n</li> }
+                        </ul>
+                    }
+                </Card>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private const int MaxRows = 500;
+
+    [SupplyParameterFromQuery(Name = "type")] public string? Type { get; set; }
+
+    private ReportDefinition? definition;
+    private Period period = Period.Day(DateTime.Today);
+    private ReportTable? table;
+
+    private string ExcelUrl => definition is null ? "" : $"reports/{definition.Key}.xlsx?from={Format.DateIso(period.From)}&to={Format.DateIso(period.To)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var initial = Type is null ? null : BuildReport.Find(Type);
+        if (initial is not null) await SelectAsync(initial);
+    }
+
+    private async Task SelectAsync(ReportDefinition r)
+    {
+        definition = r;
+        period = r.DefaultPeriod switch
+        {
+            // Daily reports default to yesterday (today is still in progress)
+            "Daily" => Period.Day(Clock.Today.AddDays(-1)),
+            "Weekly" => Period.Week(Clock.Today),
+            _ => Period.Month(Clock.Today)
+        };
+        await LoadAsync();
+    }
+
+    private async Task OnPeriodChanged(Period value)
+    {
+        period = value;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (definition is null) return;
+        table = null;
+        table = await Builder.HandleAsync(definition.Key, period.From, period.To);
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+}

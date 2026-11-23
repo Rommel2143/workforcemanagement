@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <ImportMap />
+    <HeadOutlet @rendermode="PageRenderMode" />
+</head>
+
+<body>
+    <Routes @rendermode="PageRenderMode" />
+
+    @* Shown by Blazor if the live connection to the server drops *@
+    <div id="blazor-error-ui" data-nosnippet>
+        Something went wrong. <a href="" class="reload">Reload</a>
+        <span class="dismiss">✕</span>
+    </div>
+
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["app.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    // The login page must be a plain web form (it writes a cookie).
+    // Every other page is interactive: buttons and forms update live without reloading.
+    private IComponentRenderMode? PageRenderMode =>
+        HttpContext.AcceptsInteractiveRouting() ? new InteractiveServerRenderMode(prerender: false) : null;
+}

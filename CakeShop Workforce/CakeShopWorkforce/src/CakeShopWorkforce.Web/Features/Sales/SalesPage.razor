@@ -1,0 +1,344 @@
+@page "/sales"
+@attribute [Authorize(Roles = Roles.Leaders)]
+@inject GetMonthSales.Handler MonthHandler
+@inject GetDaySales.Handler DayHandler
+@inject SaveDaySales.Handler SaveHandler
+@inject DeleteDaySales.Handler DeleteHandler
+@inject ImportSalesCsv.Handler ImportHandler
+@inject StoreConfig Config
+@inject CurrentUser User
+@inject ToastService Toasts
+@inject Clock Clock
+
+<PageHeader Title="Sales" Icon="receipt" Subtitle="Daily transactions and sales from the POS. Add hourly numbers to unlock peak-hour analysis.">
+    <button type="button" class="icon-btn" title="Previous month" @onclick="() => ChangeMonth(-1)"><Icon Name="chevron-left" Size="18" /></button>
+    <span class="period-label">@month.ToString("MMMM yyyy")</span>
+    <button type="button" class="icon-btn" title="Next month" @onclick="() => ChangeMonth(1)"><Icon Name="chevron-right" Size="18" /></button>
+    @if (canEdit)
+    {
+        <button type="button" class="btn" @onclick="OpenImport"><Icon Name="upload" Size="16" /> Import CSV</button>
+        <button type="button" class="btn btn-primary" @onclick="() => OpenDayAsync(Clock.Today.AddDays(-1))"><Icon Name="plus" Size="16" /> Enter sales</button>
+    }
+</PageHeader>
+
+@if (days is null)
+{
+    <Loading Rows="8" />
+}
+else
+{
+    var total = days.Sum(d => d.Transactions);
+    var totalSales = days.Sum(d => d.Sales);
+
+    <div class="kpi-grid small">
+        <KpiCard Label="Transactions" Icon="receipt" Value="@Format.Number(total)" Sub="@($"{days.Count} day(s) entered")" />
+        <KpiCard Label="Sales" Icon="money" Value="@Format.MoneyShort(totalSales)" />
+        <KpiCard Label="Avg transaction value" Icon="money" Value="@(total == 0 ? "—" : Format.Money(totalSales / total))" />
+        <KpiCard Label="Days with hourly data" Icon="clock" Value="@days.Count(d => d.HourCount > 0).ToString()" Hint="Hourly numbers power the peak-hour heatmap and shift suggestions" />
+    </div>
+
+    <Card Flush="true">
+        <div class="table-wrap">
+            <table class="table hover">
+                <thead>
+                    <tr><th>Date</th><th class="num">Transactions</th><th class="num">Sales</th><th class="num">Avg value</th><th>Hourly</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var date in Dates.Range(month, month.AddMonths(1).AddDays(-1)))
+                    {
+                        var d = days.FirstOrDefault(x => x.BusinessDate == date);
+                        var future = date > Clock.Today;
+                        <tr class="@(future ? "future" : "")" @onclick="() => { if (canEdit && !future) _ = OpenDayAsync(date); }">
+                            <td>@Format.Date(date) @if (d?.IsDemo == true) { <Badge Tone="warning" Class="ml">Demo</Badge> }</td>
+                            @if (d is null)
+                            {
+                                <td class="num muted">—</td>
+                                <td class="num muted">—</td>
+                                <td class="num muted">—</td>
+                                <td></td>
+                            }
+                            else
+                            {
+                                <td class="num">@Format.Number(d.Transactions)</td>
+                                <td class="num">@Format.Money(d.Sales)</td>
+                                <td class="num">@(d.AverageTransactionValue is null ? "—" : Format.Money(d.AverageTransactionValue.Value))</td>
+                                <td>@if (d.HourCount > 0) { <Badge Tone="brand">@d.HourCount hours</Badge> }</td>
+                            }
+                            <td class="row-actions">
+                                @if (canEdit && !future)
+                                {
+                                    @if (d is null)
+                                    {
+                                        <span class="muted small">Click to add</span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="icon-btn" title="Delete" @onclick:stopPropagation="true" @onclick="() => deleteDate = date"><Icon Name="trash" Size="16" /></button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </Card>
+}
+
+@* ---------- Enter / edit one day ---------- *@
+<SidePanel Open="editing is not null" Title="Sales" Subtitle="@(editing is null ? null : Format.DateLong(editing.Date))" OnClose="() => editing = null">
+    <ChildContent>
+        @if (editing is not null)
+        {
+            <div class="form-stack">
+                <label class="field">
+                    <span class="field-label">Date</span>
+                    <input type="date" class="input" value="@Format.DateIso(editing.Date)" max="@Format.DateIso(Clock.Today)" @onchange="ChangeEditDate" />
+                </label>
+
+                <div class="segmented full">
+                    <button type="button" class="@(editing.ByHour ? "" : "active")" @onclick="() => editing.ByHour = false">Daily total</button>
+                    <button type="button" class="@(editing.ByHour ? "active" : "")" @onclick="() => editing.ByHour = true">By hour</button>
+                </div>
+
+                @if (!editing.ByHour)
+                {
+                    <div class="form-row">
+                        <label class="field grow">
+                            <span class="field-label">Transactions</span>
+                            <input type="number" class="input" min="0" @bind="editing.Transactions" />
+                        </label>
+                        <label class="field grow">
+                            <span class="field-label">Sales (₱)</span>
+                            <input type="number" class="input" min="0" step="0.01" @bind="editing.Sales" />
+                        </label>
+                    </div>
+                }
+                else
+                {
+                    <div class="muted small">The daily total is the sum of the hours.</div>
+                    <table class="table compact hour-entry">
+                        <thead><tr><th>Hour</th><th>Transactions</th><th>Sales (₱)</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in editing.Hours)
+                            {
+                                <tr>
+                                    <td>@Format.HourLabel(h.Hour)</td>
+                                    <td><input type="number" class="input input-sm" min="0" @bind="h.Transactions" /></td>
+                                    <td><input type="number" class="input input-sm" min="0" step="0.01" @bind="h.Sales" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="strong">
+                                <td>Total</td>
+                                <td>@editing.Hours.Sum(h => h.Transactions ?? 0).ToString("N0")</td>
+                                <td>@Format.Money(editing.Hours.Sum(h => h.Sales ?? 0))</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-primary" @onclick="SaveDayAsync">Save</button>
+        <button type="button" class="btn" @onclick="() => editing = null">Cancel</button>
+    </Footer>
+</SidePanel>
+
+@* ---------- CSV import ---------- *@
+<SidePanel Open="importing" Title="Import sales from CSV" Wide="true" OnClose="() => importing = false">
+    <ChildContent>
+        <div class="form-stack">
+            <div class="help-box">
+                <strong>Format:</strong> one row per hour (or per day), with a header row:
+                <pre>date,hour,transactions,sales
+2026-11-22,9,14,5320.00
+2026-11-22,10,22,8810.50
+2026-11-23,,180,64200.00</pre>
+                Leave <code>hour</code> empty for a whole-day total. Days with hourly rows get their total from the hours.
+                Existing days in the file are replaced.
+            </div>
+
+            <label class="field">
+                <span class="field-label">Choose a .csv file</span>
+                <InputFile OnChange="OnFileAsync" accept=".csv,text/csv" class="input" />
+            </label>
+            <label class="field">
+                <span class="field-label">…or paste the rows</span>
+                <textarea class="input mono" rows="6" @bind="csvText" @bind:event="oninput" placeholder="date,hour,transactions,sales"></textarea>
+            </label>
+            <div><button type="button" class="btn" @onclick="PreviewCsv" disabled="@string.IsNullOrWhiteSpace(csvText)">Check file</button></div>
+
+            @if (preview is not null)
+            {
+                @if (preview.Errors.Count > 0)
+                {
+                    <div class="message-bar danger">
+                        <Icon Name="alert" Size="16" />
+                        <div>
+                            <strong>@preview.Errors.Count problem(s) — fix them and check again.</strong>
+                            <ul>@foreach (var err in preview.Errors.Take(15)) { <li>@err</li> }</ul>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="message-bar success"><Icon Name="check" Size="16" /> @preview.Lines.Count row(s) for @preview.Days day(s) are ready to import.</div>
+                    <div class="table-wrap preview-table">
+                        <table class="table compact">
+                            <thead><tr><th>Line</th><th>Date</th><th>Hour</th><th class="num">Transactions</th><th class="num">Sales</th></tr></thead>
+                            <tbody>
+                                @foreach (var l in preview.Lines.Take(50))
+                                {
+                                    <tr><td>@l.LineNumber</td><td>@Format.DateIso(l.Date)</td><td>@(l.Hour is null ? "day total" : Format.HourLabel(l.Hour.Value))</td><td class="num">@l.Transactions</td><td class="num">@Format.Money(l.Sales)</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (preview.Lines.Count > 50) { <div class="muted small">…and @(preview.Lines.Count - 50) more.</div> }
+                }
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-primary" disabled="@(preview?.CanImport != true || busy)" @onclick="ImportAsync">Import</button>
+        <button type="button" class="btn" @onclick="() => importing = false">Cancel</button>
+    </Footer>
+</SidePanel>
+
+<ConfirmDialog Open="deleteDate is not null" Title="Delete sales?" Danger="true" ConfirmText="Delete"
+               Message="@($"Remove all sales for {deleteDate:dddd, MMM d}? Productivity numbers for that day will show \"—\".")"
+               OnCancel="() => deleteDate = null" OnConfirm="DeleteAsync" />
+
+@code {
+    private DateTime month;
+    private List<SalesDay>? days;
+    private bool canEdit;
+    private bool busy;
+    private DayEdit? editing;
+    private DateTime? deleteDate;
+    private bool importing;
+    private string csvText = "";
+    private ImportSalesCsv.Preview? preview;
+    private List<int> operatingHours = [];
+
+    private sealed class DayEdit
+    {
+        public DateTime Date { get; set; }
+        public bool ByHour { get; set; }
+        public int Transactions { get; set; }
+        public decimal Sales { get; set; }
+        public List<SaveDaySales.HourInput> Hours { get; set; } = [];
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        canEdit = await User.IsInAnyRoleAsync(Roles.Owner, Roles.Manager);
+        operatingHours = (await Config.LoadAsync()).Store.OperatingHours().ToList();
+        month = Dates.StartOfMonth(Clock.Today);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => days = await MonthHandler.HandleAsync(month);
+
+    private async Task ChangeMonth(int delta)
+    {
+        month = month.AddMonths(delta);
+        days = null;
+        await LoadAsync();
+    }
+
+    private async Task OpenDayAsync(DateTime date)
+    {
+        var day = await DayHandler.HandleAsync(date);
+        var hours = operatingHours.Union(day.Hours.Select(h => h.Hour)).Order().ToList();
+        editing = new DayEdit
+        {
+            Date = date,
+            ByHour = day.Hours.Count > 0,
+            Transactions = day.Transactions,
+            Sales = day.Sales,
+            Hours = hours.Select(h =>
+            {
+                var existing = day.Hours.FirstOrDefault(x => x.Hour == h);
+                return new SaveDaySales.HourInput { Hour = h, Transactions = existing?.Transactions, Sales = existing?.Sales };
+            }).ToList()
+        };
+        StateHasChanged();
+    }
+
+    private async Task ChangeEditDate(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var d) && d.Date <= Clock.Today)
+            await OpenDayAsync(d.Date);
+    }
+
+    private async Task SaveDayAsync()
+    {
+        if (editing is null) return;
+        var result = await SaveHandler.HandleAsync(new SaveDaySales.Command
+        {
+            Date = editing.Date,
+            ByHour = editing.ByHour,
+            Transactions = editing.Transactions,
+            Sales = editing.Sales,
+            Hours = editing.Hours
+        });
+        if (!result.Ok)
+        {
+            Toasts.Error(result.Error!);
+            return;
+        }
+        Toasts.Success($"Sales saved for {Format.Date(editing.Date)}");
+        if (Dates.StartOfMonth(editing.Date) != month) month = Dates.StartOfMonth(editing.Date);
+        editing = null;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (deleteDate is null) return;
+        await DeleteHandler.HandleAsync(deleteDate.Value);
+        Toasts.Success("Sales deleted");
+        deleteDate = null;
+        await LoadAsync();
+    }
+
+    // ---- Import -------------------------------------------------------------
+
+    private void OpenImport()
+    {
+        csvText = "";
+        preview = null;
+        importing = true;
+    }
+
+    private async Task OnFileAsync(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024));
+            csvText = await reader.ReadToEndAsync();
+            PreviewCsv();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error("Could not read the file: " + ex.Message);
+        }
+    }
+
+    private void PreviewCsv() => preview = ImportSalesCsv.Parse(csvText);
+
+    private async Task ImportAsync()
+    {
+        if (preview is not { CanImport: true }) return;
+        busy = true;
+        var count = await ImportHandler.HandleAsync(preview);
+        busy = false;
+        importing = false;
+        Toasts.Success($"Imported sales for {count} day(s)");
+        await LoadAsync();
+    }
+}

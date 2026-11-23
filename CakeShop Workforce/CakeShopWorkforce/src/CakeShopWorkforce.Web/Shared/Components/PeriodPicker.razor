@@ -1,0 +1,74 @@
+@inject Clock Clock
+
+@* Daily / Weekly / Monthly / Custom date-range filter (spec section 7). *@
+
+<div class="period-picker">
+    <div class="segmented">
+        @foreach (var mode in Modes)
+        {
+            <button type="button" class="@(Value.Mode == mode ? "active" : "")" @onclick="() => SelectMode(mode)">@mode</button>
+        }
+    </div>
+
+    @if (Value.Mode == "Custom")
+    {
+        <input type="date" class="input input-sm" value="@Format.DateIso(Value.From)" @onchange="e => SetCustom(e, true)" />
+        <span class="muted">to</span>
+        <input type="date" class="input input-sm" value="@Format.DateIso(Value.To)" @onchange="e => SetCustom(e, false)" />
+    }
+    else
+    {
+        <button type="button" class="icon-btn" title="Previous" @onclick="() => Shift(-1)"><Icon Name="chevron-left" Size="18" /></button>
+        <span class="period-label">@Value.Label</span>
+        <button type="button" class="icon-btn" title="Next" @onclick="() => Shift(1)"><Icon Name="chevron-right" Size="18" /></button>
+        <button type="button" class="btn btn-subtle btn-sm" @onclick="GoToday">Today</button>
+    }
+</div>
+
+@code {
+    private static readonly string[] Modes = ["Daily", "Weekly", "Monthly", "Custom"];
+
+    [Parameter, EditorRequired] public Period Value { get; set; } = Period.Day(DateTime.Today);
+    [Parameter] public EventCallback<Period> ValueChanged { get; set; }
+
+    private Task SelectMode(string mode)
+    {
+        var anchor = Value.From;
+        return Change(mode switch
+        {
+            "Daily" => Period.Day(Value.To),
+            "Weekly" => Period.Week(anchor),
+            "Monthly" => Period.Month(anchor),
+            _ => Period.Custom(Value.From, Value.To)
+        });
+    }
+
+    private Task Shift(int direction) => Change(Value.Mode switch
+    {
+        "Daily" => Period.Day(Value.From.AddDays(direction)),
+        "Weekly" => Period.Week(Value.From.AddDays(7 * direction)),
+        _ => Period.Month(Value.From.AddMonths(direction))
+    });
+
+    private Task GoToday() => Change(Value.Mode switch
+    {
+        "Daily" => Period.Day(Clock.Today),
+        "Weekly" => Period.Week(Clock.Today),
+        _ => Period.Month(Clock.Today)
+    });
+
+    private Task SetCustom(ChangeEventArgs e, bool isFrom)
+    {
+        if (!DateTime.TryParse(e.Value?.ToString(), out var date)) return Task.CompletedTask;
+        var from = isFrom ? date : Value.From;
+        var to = isFrom ? Value.To : date;
+        if (to < from) (from, to) = (to, from);
+        return Change(Period.Custom(from, to));
+    }
+
+    private Task Change(Period period)
+    {
+        Value = period;
+        return ValueChanged.InvokeAsync(period);
+    }
+}

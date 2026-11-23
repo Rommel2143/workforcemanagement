@@ -1,0 +1,253 @@
+@page "/analytics"
+@attribute [Authorize(Roles = Roles.Managers)]
+@inject GetManpowerAnalysis.Handler Handler
+@inject Clock Clock
+
+<PageHeader Title="Manpower analytics" Icon="chart" Subtitle="Are we staffed right for how busy we are? Every number is calculated from schedule, attendance and sales.">
+    <PeriodPicker Value="period" ValueChanged="OnPeriodChanged" />
+</PageHeader>
+
+@if (result is null)
+{
+    <Loading Rows="8" />
+}
+else
+{
+    var s = result.Summary;
+
+    <div class="kpi-grid">
+        <KpiCard Label="Transactions / labor hour" Icon="target" Value="@Format.OrDash(s.TransactionsPerLaborHour)"
+                 Sub="@(s.MedianTransactionsPerLaborHour is null ? null : $"Typical day {s.MedianTransactionsPerLaborHour:0.#}")"
+                 Hint="Transactions ÷ actual labor hours of ALL staff (TPLH). Compare days with each other — the typical day is the median." />
+        <KpiCard Label="Sales / labor hour" Icon="money" Value="@(s.SalesPerLaborHour is null ? "—" : Format.Money(s.SalesPerLaborHour.Value))"
+                 Hint="Sales ÷ actual labor hours (SPLH)" />
+        <KpiCard Label="Transactions / personnel" Icon="people" Value="@Format.OrDash(s.TransactionsPerPersonnel)"
+                 Hint="Transactions ÷ personnel present (TPP)" />
+        <KpiCard Label="Ideal vs present" Icon="target" Value="@($"{s.Ideal} / {s.PresentOnSalesDays}")"
+                 Sub="@GapText(s.Gap)" Hint="Station-aware ideal person-days vs people present, on days with sales"
+                 Tone="@(s.Gap < 0 ? "danger" : "brand")" />
+        <KpiCard Label="Utilization" Icon="chart" Value="@Format.Percent(s.Utilization)" Hint="Ideal ÷ present × 100. Under ~85% may be overstaffed, over 100% is stretched." />
+        <KpiCard Label="Staffing status" Icon="shield" Value="@ManpowerMath.Label(s.Status)" Tone="@ManpowerMath.Tone(s.Status)"
+                 Sub="@($"{s.UnderstaffedDays} short · {s.OptimalDays} optimal · {s.OverstaffedDays} over")" />
+    </div>
+
+    <div class="grid-2">
+        <Card Title="Manager's questions" Subtitle="Plain answers for this period">
+            <div class="insights">
+                @foreach (var insight in result.Insights)
+                {
+                    <div class="insight insight-@insight.Tone">
+                        <div class="insight-q">@insight.Question</div>
+                        <div class="insight-a">@insight.Answer</div>
+                    </div>
+                }
+            </div>
+        </Card>
+
+        <Card Title="Recommendations" Subtitle="Suggestions move hours; they never cut people without checking coverage">
+            @if (result.Recommendations.Count == 0)
+            {
+                <EmptyState Icon="sparkle" Title="Nothing to change" Message="Staffing matches demand in this period." />
+            }
+            else
+            {
+                <ul class="reco-list">
+                    @foreach (var reco in result.Recommendations)
+                    {
+                        <li><Icon Name="sparkle" Size="16" /> <span>@reco</span></li>
+                    }
+                </ul>
+            }
+        </Card>
+    </div>
+
+    <div class="grid-2">
+        <Card Title="Productivity trend" Subtitle="Transactions per labor hour (bars) and sales per labor hour (line)">
+            <ComboChart Labels="dayLabels"
+                        Bars="@([new ChartSeries("TPLH", ChartColors.Brand, result.Days.Select(d => (double)(d.Manpower.TransactionsPerLaborHour ?? 0)).ToList())])"
+                        Line="@(new ChartSeries("SPLH", ChartColors.Orange, result.Days.Select(d => (double)(d.Manpower.SalesPerLaborHour ?? 0)).ToList()))"
+                        SecondaryAxis="true" LineFormatter="@(v => "₱" + v.ToString("0"))" AriaLabel="Productivity trend" />
+        </Card>
+        <Card Title="Personnel utilization" Subtitle="Ideal ÷ present per day (100% = exactly right)">
+            <ComboChart Labels="dayLabels"
+                        Bars="@([new ChartSeries("Utilization %", ChartColors.Teal, result.Days.Select(d => (double)(d.Manpower.Utilization ?? 0)).ToList())])"
+                        BarFormat="@(v => v.ToString("0") + "%")" AriaLabel="Utilization by day" />
+        </Card>
+    </div>
+
+    <Card Title="Daily manpower analysis" Flush="true">
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th class="num">Transactions</th>
+                        <th class="num">Sales</th>
+                        <th class="num">Present</th>
+                        <th class="num">Labor h</th>
+                        <th class="num" title="Transactions per personnel">TPP</th>
+                        <th class="num" title="Sales per personnel">SPP</th>
+                        <th class="num" title="Transactions per labor hour">TPLH</th>
+                        <th class="num" title="CEILING(transactions ÷ target)">Simple ideal</th>
+                        <th class="num" title="Station-aware ideal">Ideal</th>
+                        <th class="num">Gap</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in result.Days)
+                    {
+                        var m = d.Manpower;
+                        <tr>
+                            <td><a href="attendance?date=@Format.DateIso(d.Date)">@Format.Date(d.Date)</a></td>
+                            <td class="num">@(d.HasSales ? Format.Number(d.Transactions) : "—")</td>
+                            <td class="num">@(d.HasSales ? Format.MoneyShort(d.Sales) : "—")</td>
+                            <td class="num">@d.Present</td>
+                            <td class="num">@Format.Number(d.LaborHours, 1)</td>
+                            <td class="num">@Format.OrDash(m.TransactionsPerPersonnel)</td>
+                            <td class="num">@(m.SalesPerPersonnel is null ? "—" : Format.MoneyShort(m.SalesPerPersonnel.Value))</td>
+                            <td class="num">@Format.OrDash(m.TransactionsPerLaborHour)</td>
+                            <td class="num muted">@(d.HasSales ? m.SimpleIdeal : "—")</td>
+                            <td class="num">@(d.HasSales ? m.Ideal : "—")</td>
+                            <td class="num @(d.HasSales && m.Gap < 0 ? "text-danger" : "")">@(d.HasSales ? GapNumber(m.Gap) : "—")</td>
+                            <td><Badge Tone="@ManpowerMath.Tone(m.Status)" Title="@ManpowerMath.Advice(m)">@ManpowerMath.Label(m.Status)</Badge></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </Card>
+
+    <div class="grid-2">
+        <Card Title="Peak hours" Subtitle="@($"Average transactions by weekday and hour · {result.HourlyFrom:MMM d} – {result.HourlyTo:MMM d} · {result.HourlyDays} day(s) with hourly data")">
+            @if (result.HourlyDays == 0)
+            {
+                <EmptyState Icon="clock" Title="No hourly sales yet" Message="Enter sales by hour or import a CSV with an hour column to see peak hours." />
+            }
+            else
+            {
+                <Heatmap RowLabels="Dates.DayCodes" ColumnLabels="@result.HeatmapHours.Select(h => Format.HourLabel(h).Replace(" ", "")).ToList()" Values="result.Heatmap" />
+            }
+        </Card>
+
+        <Card Title="Hour by hour" Subtitle="Counter staff (Cashier + Sales) on duty vs required. Production and decorating follow their station minimum." Flush="true">
+            <div class="table-wrap">
+                <table class="table compact">
+                    <thead>
+                        <tr><th>Hour</th><th class="num">Avg tx</th><th class="num" title="Average Cashier + Sales people on duty">Counter on duty</th><th class="num">Required</th><th class="num">Coverage</th><th class="num">Tx / person</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var h in result.Hours)
+                        {
+                            <tr>
+                                <td>@Format.HourLabel(h.Hour)</td>
+                                <td class="num">@h.AvgTransactions.ToString("0.#")</td>
+                                <td class="num">@h.AvgPresent.ToString("0.#")</td>
+                                <td class="num">@h.Required</td>
+                                <td class="num @(h.Coverage < 0.9m ? "text-danger" : h.Coverage > 1.3m ? "text-warning" : "")">@(h.Coverage is null ? "—" : h.Coverage.Value.ToString("0.00"))</td>
+                                <td class="num">@(h.TransactionsPerPerson?.ToString("0.#") ?? "—")</td>
+                                <td>
+                                    @if (h.Tag == "Peak") { <Badge Tone="danger">Peak</Badge> }
+                                    else if (h.Tag == "Low") { <Badge Tone="neutral">Low</Badge> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    </div>
+
+    <div class="grid-2">
+        <Card Title="Suggested shifts per weekday" Subtitle="Fewest counter shifts (Cashier + Sales) that cover the average hourly traffic. Add production and decorating at their station minimum." Flush="true">
+            <div class="table-wrap">
+                <table class="table compact">
+                    <thead>
+                        <tr>
+                            <th>Day</th>
+                            <th class="num">Avg tx</th>
+                            <th class="num">Avg present</th>
+                            <th class="num">Avg ideal</th>
+                            @foreach (var t in result.Setup.ShiftTemplates.Where(t => t.IsActive))
+                            {
+                                <th class="num" title="@t.Name">@t.Code</th>
+                            }
+                            <th class="num">Counter people</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var w in result.Weekdays)
+                        {
+                            <tr>
+                                <td>@w.Day</td>
+                                <td class="num">@(w.Samples == 0 ? "—" : w.AvgTransactions.ToString("N0"))</td>
+                                <td class="num">@(w.Samples == 0 ? "—" : w.AvgPresent.ToString("0.#"))</td>
+                                <td class="num">@(w.Samples == 0 ? "—" : w.AvgIdeal.ToString("0.#"))</td>
+                                @foreach (var t in result.Setup.ShiftTemplates.Where(t => t.IsActive))
+                                {
+                                    var count = w.SuggestedShifts.FirstOrDefault(x => x.Template.Id == t.Id).Count;
+                                    <td class="num">@(w.SuggestedShifts.Count == 0 ? "—" : count.ToString())</td>
+                                }
+                                <td class="num strong">@(w.SuggestedShifts.Count == 0 ? "—" : w.SuggestedPeople.ToString())</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+
+        <Card Title="Stations" Subtitle="Average people present vs required on days with sales" Flush="true">
+            <div class="table-wrap">
+                <table class="table compact">
+                    <thead><tr><th>Station</th><th>Driver</th><th class="num">Avg present</th><th class="num">Avg required</th><th class="num">Days short</th></tr></thead>
+                    <tbody>
+                        @foreach (var st in result.Stations)
+                        {
+                            <tr>
+                                <td><span class="station-dot" style="background:@st.Station.Color"></span>@st.Station.Name</td>
+                                <td class="muted">@(st.Station.IsTransactionDriven ? $"1 per {st.Station.TargetTxPerPerson} tx" : $"Fixed {st.Station.MinHeadcount}")</td>
+                                <td class="num">@st.AvgPresent.ToString("0.#")</td>
+                                <td class="num">@st.AvgRequired.ToString("0.#")</td>
+                                <td class="num @(st.DaysShort > 0 ? "text-danger" : "")">@st.DaysShort</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    </div>
+}
+
+@code {
+    private Period period = Period.Month(DateTime.Today);
+    private GetManpowerAnalysis.Result? result;
+    private List<string> dayLabels = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        period = Period.Month(Clock.Today);
+        await LoadAsync();
+    }
+
+    private async Task OnPeriodChanged(Period value)
+    {
+        period = value;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        result = null;
+        result = await Handler.HandleAsync(period);
+        dayLabels = result.Days.Select(d => result.Days.Count > 8 ? d.Date.Day.ToString() : Dates.DayCode(d.Date)).ToList();
+    }
+
+    private static string GapNumber(int gap) => gap > 0 ? "+" + gap : gap.ToString();
+
+    private static string GapText(int gap) => gap switch
+    {
+        < 0 => $"{-gap} person-day(s) short",
+        0 => "Exactly right",
+        _ => $"{gap} more than needed"
+    };
+}

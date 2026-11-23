@@ -1,0 +1,176 @@
+is_global = true
+build_property.TargetFramework = net10.0
+build_property.TargetFrameworkIdentifier = .NETCoreApp
+build_property.TargetFrameworkVersion = v10.0
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = true
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = 
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property.EntryPointFilePath = 
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property.RootNamespace = CakeShopWorkforce.Web
+build_property.RootNamespace = CakeShopWorkforce.Web
+build_property.ProjectDir = C:\Users\romme\Desktop\CakeShop Workforce\CakeShopWorkforce\src\CakeShopWorkforce.Web\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.RazorLangVersion = 10.0
+build_property.SupportLocalizedComponentNames = 
+build_property.GenerateRazorMetadataSourceChecksumAttributes = 
+build_property.MSBuildProjectDirectory = C:\Users\romme\Desktop\CakeShop Workforce\CakeShopWorkforce\src\CakeShopWorkforce.Web
+build_property._RazorSourceGeneratorDebug = 
+build_property.EffectiveAnalysisLevelStyle = 10.0
+build_property.EnableCodeStyleSeverity = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Components/App.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xBcHAucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Components/Layout/EmptyLayout.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcRW1wdHlMYXlvdXQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Components/Layout/MainLayout.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcTWFpbkxheW91dC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Components/Layout/NavRail.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcTmF2UmFpbC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Components/Layout/RailLink.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcUmFpbExpbmsucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Components/Layout/TopBar.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcVG9wQmFyLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Components/RedirectToLogin.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xSZWRpcmVjdFRvTG9naW4ucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Components/Routes.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xSb3V0ZXMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Alerts/AlertsPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcQWxlcnRzXEFsZXJ0c1BhZ2UucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Analytics/AnalyticsPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcQW5hbHl0aWNzXEFuYWx5dGljc1BhZ2UucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Attendance/AttendancePage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcQXR0ZW5kYW5jZVxBdHRlbmRhbmNlUGFnZS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Auth/AccessDeniedPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcQXV0aFxBY2Nlc3NEZW5pZWRQYWdlLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Auth/ErrorPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcQXV0aFxFcnJvclBhZ2UucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Auth/LoginPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcQXV0aFxMb2dpblBhZ2UucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Dashboard/DashboardPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcRGFzaGJvYXJkXERhc2hib2FyZFBhZ2UucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Employees/EmployeesPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcRW1wbG95ZWVzXEVtcGxveWVlc1BhZ2UucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/MySchedule/MySchedulePage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcTXlTY2hlZHVsZVxNeVNjaGVkdWxlUGFnZS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Reports/ReportsPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcUmVwb3J0c1xSZXBvcnRzUGFnZS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Sales/SalesPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcU2FsZXNcU2FsZXNQYWdlLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Schedule/SchedulePage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcU2NoZWR1bGVcU2NoZWR1bGVQYWdlLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/Settings/SettingsPage.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcU2V0dGluZ3NcU2V0dGluZ3NQYWdlLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Features/_Imports.razor]
+build_metadata.AdditionalFiles.TargetPath = RmVhdHVyZXNcX0ltcG9ydHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/Avatar.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcQXZhdGFyLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/Badge.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcQmFkZ2UucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/Card.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcQ2FyZC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/Charts/ComboChart.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcQ2hhcnRzXENvbWJvQ2hhcnQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/Charts/Heatmap.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcQ2hhcnRzXEhlYXRtYXAucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/ConfirmDialog.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcQ29uZmlybURpYWxvZy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/DayDots.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcRGF5RG90cy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/EmptyState.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcRW1wdHlTdGF0ZS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/Icon.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcSWNvbi5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/KpiCard.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcS3BpQ2FyZC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/Loading.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcTG9hZGluZy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/PageHeader.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcUGFnZUhlYWRlci5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/PeriodPicker.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcUGVyaW9kUGlja2VyLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/SidePanel.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcU2lkZVBhbmVsLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/Shared/Components/ToastHost.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkXENvbXBvbmVudHNcVG9hc3RIb3N0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/romme/Desktop/CakeShop Workforce/CakeShopWorkforce/src/CakeShopWorkforce.Web/_Imports.razor]
+build_metadata.AdditionalFiles.TargetPath = X0ltcG9ydHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 

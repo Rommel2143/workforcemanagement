@@ -1,0 +1,83 @@
+@using CakeShopWorkforce.Web.Features.Alerts
+@inject NavigationManager Nav
+@inject GetAlerts.Handler AlertsHandler
+@inject Clock Clock
+
+@* Title bar: app name, global search, alerts bell and the user menu. *@
+
+<header class="titlebar">
+    <a class="brand" href="">
+        <span class="brand-mark"><Icon Name="cake" Size="18" /></span>
+        <span class="brand-name">CakeShop Workforce</span>
+    </a>
+
+    <AuthorizeView Roles="@Roles.Leaders">
+        <form class="global-search" @onsubmit="Search" @onsubmit:preventDefault>
+            <Icon Name="search" Size="16" />
+            <input type="search" placeholder="Search people by name, ID or position" @bind="searchText" aria-label="Search people" />
+        </form>
+    </AuthorizeView>
+
+    <div class="titlebar-actions">
+        <AuthorizeView Roles="@Roles.Leaders">
+            <a class="icon-btn bell" href="alerts" title="Alerts">
+                <Icon Name="bell" />
+                @if (alertCount > 0)
+                {
+                    <span class="bell-count">@(alertCount > 9 ? "9+" : alertCount)</span>
+                }
+            </a>
+        </AuthorizeView>
+
+        <AuthorizeView>
+            <div class="user-menu">
+                <button type="button" class="user-button" @onclick="() => menuOpen = !menuOpen" aria-expanded="@menuOpen">
+                    <Avatar Name="@context.User.DisplayName()" Size="sm" />
+                </button>
+                @if (menuOpen)
+                {
+                    <div class="menu-backdrop" @onclick="() => menuOpen = false"></div>
+                    <div class="menu">
+                        <div class="menu-user">
+                            <Avatar Name="@context.User.DisplayName()" Size="lg" />
+                            <div>
+                                <div class="strong">@context.User.DisplayName()</div>
+                                <div class="muted small">@context.User.Identity?.Name · @context.User.RoleName()</div>
+                            </div>
+                        </div>
+                        <a class="menu-item" href="my-schedule" @onclick="() => menuOpen = false"><Icon Name="person" Size="16" /> My shifts</a>
+                        <form method="post" action="logout">
+                            <AntiforgeryToken />
+                            <button type="submit" class="menu-item"><Icon Name="logout" Size="16" /> Sign out</button>
+                        </form>
+                    </div>
+                }
+            </div>
+        </AuthorizeView>
+    </div>
+</header>
+
+@code {
+    private string searchText = "";
+    private bool menuOpen;
+    private int alertCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var alerts = await AlertsHandler.HandleAsync(Clock.Today);
+            alertCount = alerts.Count(a => a.Severity is "danger" or "warning");
+        }
+        catch
+        {
+            alertCount = 0;   // the bell must never break the page
+        }
+    }
+
+    private void Search()
+    {
+        if (string.IsNullOrWhiteSpace(searchText)) return;
+        Nav.NavigateTo($"employees?q={Uri.EscapeDataString(searchText.Trim())}");
+    }
+}

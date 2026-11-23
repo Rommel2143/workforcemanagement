@@ -1,0 +1,102 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@layout EmptyLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject ValidateLogin.Handler Login
+@inject NavigationManager Nav
+
+@*
+   The sign-in page runs as a normal (non-interactive) web form because
+   writing the login cookie needs a real HTTP request.
+*@
+
+<PageTitle>Sign in · CakeShop Workforce</PageTitle>
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-brand">
+            <div class="brand-mark"><Icon Name="cake" Size="26" /></div>
+            <div>
+                <div class="login-title">CakeShop Workforce</div>
+                <div class="login-sub">Schedule planner &amp; personnel analytics</div>
+            </div>
+        </div>
+
+        <h1 class="login-heading">Sign in</h1>
+
+        @if (error is not null)
+        {
+            <div class="message-bar danger"><Icon Name="alert" Size="16" /> @error</div>
+        }
+
+        <EditForm Model="Input" FormName="login" OnValidSubmit="SignInAsync" method="post" class="form-stack">
+            <DataAnnotationsValidator />
+
+            <label class="field">
+                <span class="field-label">User name</span>
+                <InputText @bind-Value="Input.UserName" class="input" autocomplete="username" autofocus />
+                <ValidationMessage For="() => Input.UserName" class="field-error" />
+            </label>
+
+            <label class="field">
+                <span class="field-label">Password</span>
+                <InputText @bind-Value="Input.Password" type="password" class="input" autocomplete="current-password" />
+                <ValidationMessage For="() => Input.Password" class="field-error" />
+            </label>
+
+            <label class="check">
+                <InputCheckbox @bind-Value="Input.RememberMe" /> Keep me signed in
+            </label>
+
+            <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+        </EditForm>
+
+        <p class="login-hint">First run? Use the default Owner login from <code>appsettings.json</code>, then change the password in Settings → Users.</p>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm] private LoginInput Input { get; set; } = new();
+
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string? error;
+
+    private async Task SignInAsync()
+    {
+        var user = await Login.HandleAsync(Input.UserName, Input.Password);
+        if (user is null)
+        {
+            error = "Wrong user name or password.";
+            return;
+        }
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            user.ToPrincipal(),
+            new AuthenticationProperties { IsPersistent = Input.RememberMe });
+
+        // Staff accounts land on their own schedule; everyone else on the dashboard
+        var target = user.Role == Roles.Staff ? "/my-schedule" : "/";
+        if (!string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//"))
+            target = ReturnUrl;
+
+        Nav.NavigateTo(target, forceLoad: true);
+    }
+
+    private sealed class LoginInput
+    {
+        [Required(ErrorMessage = "Enter your user name")]
+        public string UserName { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter your password")]
+        public string Password { get; set; } = "";
+
+        public bool RememberMe { get; set; } = true;
+    }
+}

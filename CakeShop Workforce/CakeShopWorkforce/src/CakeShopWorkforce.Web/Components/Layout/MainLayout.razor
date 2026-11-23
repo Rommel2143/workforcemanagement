@@ -1,0 +1,46 @@
+@inherits LayoutComponentBase
+@using CakeShopWorkforce.Web.Features.Settings
+@inject GetDemoStatus.Handler DemoStatus
+
+@*
+    The Teams-style frame around every page:
+
+    ┌──────────────────────────────────────────────┐
+    │ TopBar  (app name · search · alerts · user)  │
+    ├────┬─────────────────────────────────────────┤
+    │Nav │                                         │
+    │Rail│            @Body  (the page)            │
+    │    │                                         │
+    └────┴─────────────────────────────────────────┘
+    On phones the rail moves to the bottom of the screen.
+*@
+
+<div class="shell">
+    <TopBar />
+    <NavRail />
+    <main class="content" id="main">
+        @if (hasDemo)
+        {
+            <div class="demo-banner no-print">
+                <Icon Name="alert" Size="16" />
+                <span><strong>Demo data is loaded.</strong> Numbers include sample employees and sales — do not use them as actual results.</span>
+                <AuthorizeView Roles="@Roles.Managers">
+                    <a href="settings?tab=demo">Remove demo data</a>
+                </AuthorizeView>
+            </div>
+        }
+        @Body
+    </main>
+</div>
+
+<ToastHost />
+
+@code {
+    private bool hasDemo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { hasDemo = await DemoStatus.HandleAsync(); }
+        catch { hasDemo = false; }   // the banner must never break the page
+    }
+}

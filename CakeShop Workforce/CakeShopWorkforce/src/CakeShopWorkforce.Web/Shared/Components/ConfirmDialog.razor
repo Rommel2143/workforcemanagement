@@ -1,0 +1,25 @@
+@* "Are you sure?" dialog. Danger="true" makes the confirm button red. *@
+
+@if (Open)
+{
+    <div class="dialog-backdrop">
+        <div class="dialog" role="alertdialog" aria-label="@Title">
+            <h2>@Title</h2>
+            <p>@Message</p>
+            <div class="dialog-actions">
+                <button type="button" class="btn" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+                <button type="button" class="btn @(Danger ? "btn-danger" : "btn-primary")" @onclick="() => OnConfirm.InvokeAsync()">@ConfirmText</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string Title { get; set; } = "Are you sure?";
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string ConfirmText { get; set; } = "Confirm";
+    [Parameter] public bool Danger { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+}

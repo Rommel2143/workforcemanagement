@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CakeShopWorkforce.Web/CakeShopWorkforce.Web.csproj" />
+  </Folder>
+</Solution>
